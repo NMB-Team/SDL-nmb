@@ -524,16 +524,18 @@ int SDL_EGL_LoadLibrary(_THIS, const char *egl_path, NativeDisplayType native_di
         }
 
         if (_this->egl_data->eglGetPlatformDisplay) {
-            EGLAttrib *attribs = NULL;
-            if (_this->egl_platformattrib_callback) {
-                attribs = _this->egl_platformattrib_callback();
-                if (!attribs) {
-                    _this->gl_config.driver_loaded = 0;
-                    *_this->gl_config.driver_path = '\0';
-                    return SDL_SetError("EGL platform attribute callback returned NULL pointer");
-                }
-            }
-            _this->egl_data->egl_display = _this->egl_data->eglGetPlatformDisplay(platform, (void *)(uintptr_t)native_display, attribs);
+			#if defined(SDL_VIDEO_DRIVER_COCOA) || defined(SDL_VIDEO_DRIVER_WINDOWS) || defined(SDL_VIDEO_DRIVER_X11)
+				static const EGLAttrib display_attribs[] = {
+					0x3203, // EGL_PLATFORM_ANGLE_TYPE_ANGLE
+					0x3450, // EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE
+					0x3482, // EGL_POWER_PREFERENCE_ANGLE
+					0x0002, // EGL_HIGH_POWER_ANGLE
+					0x3038  // EGL_NONE
+				};
+				_this->egl_data->egl_display = _this->egl_data->eglGetPlatformDisplay((EGLenum)0x3202 /* EGL_PLATFORM_ANGLE_ANGLE */, (void*)(uintptr_t)native_display, display_attribs);
+			#else
+				_this->egl_data->egl_display = _this->egl_data->eglGetPlatformDisplay(platform, (void *)(uintptr_t)native_display, NULL);
+			#endif
         } else {
             if (SDL_EGL_HasExtension(_this, SDL_EGL_CLIENT_EXTENSION, "EGL_EXT_platform_base")) {
                 _this->egl_data->eglGetPlatformDisplayEXT = SDL_EGL_GetProcAddressInternal(_this, "eglGetPlatformDisplayEXT");
