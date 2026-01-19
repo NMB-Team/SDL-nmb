@@ -152,6 +152,8 @@ typedef enum SDL_EventType
     SDL_DROPTEXT,                 /**< text/plain drag-and-drop event */
     SDL_DROPBEGIN,                /**< A new set of drops is beginning (NULL filename) */
     SDL_DROPCOMPLETE,             /**< Current set of drops is now complete (NULL filename) */
+	SDL_DRAGENTER,                /**< A drag event */
+    SDL_DRAGEXIT,                 /**< A drag event */
 
     /* Audio hotplug events */
     SDL_AUDIODEVICEADDED = 0x1100, /**< A new audio device is available */
@@ -587,9 +589,9 @@ typedef struct SDL_DollarGestureEvent
  */
 typedef struct SDL_DropEvent
 {
-    Uint32 type;        /**< SDL_DROPBEGIN or SDL_DROPFILE or SDL_DROPTEXT or SDL_DROPCOMPLETE */
+    Uint32 type;        /**< SDL_DROPBEGIN or SDL_DROPFILE or SDL_DROPTEXT or SDL_DROPCOMPLETE or ::SDL_DRAGENTER or ::SDL_DRAGEXIT */
     Uint32 timestamp;   /**< In milliseconds, populated using SDL_GetTicks() */
-    char *file;         /**< The file name, which should be freed with SDL_free(), is NULL on begin/complete */
+    char *file;         /**< The file name, which should be freed with SDL_free(), is NULL on begin/complete/dragstart/dragstop */
     Uint32 windowID;    /**< The window that was dropped on, if any */
 } SDL_DropEvent;
 

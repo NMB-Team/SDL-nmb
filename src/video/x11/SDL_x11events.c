@@ -1255,6 +1255,7 @@ static void X11_DispatchEvent(_THIS, XEvent *xevent)
 
         if (xevent->xclient.message_type == videodata->XdndEnter) {
 
+			SDL_SendDragEnter(data->window); // this is probably the wrong place to do this, but it works for now
             SDL_bool use_list = xevent->xclient.data.l[1] & 1;
             data->xdnd_source = xevent->xclient.data.l[0];
             xdnd_version = (xevent->xclient.data.l[1] >> 24);
@@ -1275,6 +1276,8 @@ static void X11_DispatchEvent(_THIS, XEvent *xevent)
                 /* pick from list of three */
                 data->xdnd_req = X11_PickTargetFromAtoms(display, xevent->xclient.data.l[2], xevent->xclient.data.l[3], xevent->xclient.data.l[4]);
             }
+        } else if (xevent->xclient.message_type == videodata->XdndLeave) {
+             SDL_SendDragExit(data->window); // this is probably the wrong place to do this, but it works for now
         } else if (xevent->xclient.message_type == videodata->XdndPosition) {
 
 #ifdef DEBUG_XEVENTS

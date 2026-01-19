@@ -450,7 +450,8 @@ int X11_CreateWindow(_THIS, SDL_Window *window)
 
 #ifdef SDL_VIDEO_OPENGL_EGL
         if (((_this->gl_config.profile_mask == SDL_GL_CONTEXT_PROFILE_ES) ||
-             SDL_GetHintBoolean(SDL_HINT_VIDEO_X11_FORCE_EGL, SDL_FALSE))
+            SDL_GetHintBoolean(SDL_HINT_VIDEO_FORCE_EGL, SDL_FALSE) ||
+            SDL_GetHintBoolean(SDL_HINT_VIDEO_X11_FORCE_EGL, SDL_FALSE))
 #ifdef SDL_VIDEO_OPENGL_GLX
             && (!_this->gl_data || X11_GL_UseEGL(_this) )
 #endif

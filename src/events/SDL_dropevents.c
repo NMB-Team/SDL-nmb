@@ -28,6 +28,37 @@
 
 #include "../video/SDL_sysvideo.h" /* for SDL_Window internals. */
 
+static SDL_bool app_is_dragging = SDL_FALSE;
+
+static int SDL_SendDrag(SDL_Window *window, const SDL_EventType evtype, const char *data)
+{
+    int posted = 0;
+    if (SDL_GetEventState(evtype) == SDL_ENABLE) {
+        const SDL_bool is_already_dragging = (window ? window->is_dragging : app_is_dragging);
+        if(is_already_dragging && (evtype == SDL_DRAGENTER)) {
+            return 0;
+        }
+        if(!is_already_dragging && (evtype == SDL_DRAGEXIT)) {
+            return 0;
+        }
+        SDL_Event event;
+        SDL_zero(event);
+        event.type = evtype;
+        event.drop.file = data ? SDL_strdup(data) : NULL;
+        event.drop.windowID = window ? window->id : 0;
+        posted = (SDL_PushEvent(&event) > 0);
+        if (posted) {
+            SDL_bool value = evtype == SDL_DRAGENTER ? SDL_TRUE : SDL_FALSE;
+            if (window) {
+                window->is_dragging = value;
+            } else {
+                app_is_dragging = value;
+            }
+        }
+    }
+    return posted;
+}
+
 static int SDL_SendDrop(SDL_Window *window, const SDL_EventType evtype, const char *data)
 {
     static SDL_bool app_is_dropping = SDL_FALSE;
@@ -42,9 +73,7 @@ static int SDL_SendDrop(SDL_Window *window, const SDL_EventType evtype, const ch
             SDL_zero(event);
             event.type = SDL_DROPBEGIN;
 
-            if (window) {
-                event.drop.windowID = window->id;
-            }
+            event.drop.windowID = window ? window->id : 0;
 
             posted = (SDL_PushEvent(&event) > 0);
             if (!posted) {
@@ -69,9 +98,23 @@ static int SDL_SendDrop(SDL_Window *window, const SDL_EventType evtype, const ch
             } else {
                 app_is_dropping = SDL_FALSE;
             }
+			const SDL_bool is_in_drag = (window ? window->is_dragging : app_is_dragging);
+            if(is_in_drag) {
+                SDL_SendDrag(window, SDL_DRAGEXIT, NULL);
+            }
         }
     }
     return posted;
+}
+
+int SDL_SendDragEnter(SDL_Window *window)
+{
+    return SDL_SendDrag(window, SDL_DRAGENTER, NULL);
+}
+
+int SDL_SendDragExit(SDL_Window *window)
+{
+    return SDL_SendDrag(window, SDL_DRAGEXIT, NULL);
 }
 
 int SDL_SendDropFile(SDL_Window *window, const char *file)

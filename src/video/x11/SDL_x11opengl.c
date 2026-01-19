@@ -254,7 +254,8 @@ int X11_GL_LoadLibrary(_THIS, const char *path)
      * GLX_EXT_create_context_es2_profile extension, switch over to X11_GLES functions
      */
     if (((_this->gl_config.profile_mask == SDL_GL_CONTEXT_PROFILE_ES) ||
-         SDL_GetHintBoolean(SDL_HINT_VIDEO_X11_FORCE_EGL, SDL_FALSE)) &&
+        SDL_GetHintBoolean(SDL_HINT_VIDEO_FORCE_EGL, SDL_FALSE) ||
+		SDL_GetHintBoolean(SDL_HINT_VIDEO_X11_FORCE_EGL, SDL_FALSE)) &&
         X11_GL_UseEGL(_this) ) {
 #ifdef SDL_VIDEO_OPENGL_EGL
         X11_GL_UnloadLibrary(_this);
@@ -684,7 +685,8 @@ static int X11_GL_ErrorHandler(Display *d, XErrorEvent *e)
 SDL_bool X11_GL_UseEGL(_THIS)
 {
     SDL_assert(_this->gl_data != NULL);
-    if (SDL_GetHintBoolean(SDL_HINT_VIDEO_X11_FORCE_EGL, SDL_FALSE))
+    if (SDL_GetHintBoolean(SDL_HINT_VIDEO_FORCE_EGL, SDL_FALSE) ||
+        SDL_GetHintBoolean(SDL_HINT_VIDEO_X11_FORCE_EGL, SDL_FALSE))
     {
         /* use of EGL has been requested, even for desktop GL */
         return SDL_TRUE;

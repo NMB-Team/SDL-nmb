@@ -157,14 +157,17 @@ static int SDL_ANDROID_SensorOpen(SDL_Sensor *sensor, int device_index)
 
 static void SDL_ANDROID_SensorUpdate(SDL_Sensor *sensor)
 {
-    int events;
+    int pollResult;
+    int pollEvents;
     ASensorEvent event;
     struct android_poll_source *source;
 
-    if (ALooper_pollOnce(0, NULL, &events, (void **)&source) == LOOPER_ID_USER) {
-        SDL_zero(event);
-        while (ASensorEventQueue_getEvents(sensor->hwdata->eventqueue, &event, 1) > 0) {
-            SDL_PrivateSensorUpdate(sensor, 0, event.data, SDL_arraysize(event.data));
+    while ((pollResult = ALooper_pollOnce(0, NULL, &pollEvents, NULL)) > ALOOPER_POLL_TIMEOUT) {
+        if (pollResult == LOOPER_ID_USER) {
+            SDL_zero(event);
+            while (ASensorEventQueue_getEvents(sensor->hwdata->eventqueue, &event, 1) > 0) {
+                SDL_PrivateSensorUpdate(sensor, event.data, SDL_arraysize(event.data));
+            }
         }
     }
 }

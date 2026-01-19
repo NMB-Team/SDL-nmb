@@ -26,6 +26,7 @@
 #include "SDL.h"
 #include "SDL_video.h"
 #include "SDL_sysvideo.h"
+#include "SDL_egl_c.h"
 #include "SDL_blit.h"
 #include "SDL_pixels_c.h"
 #include "SDL_rect_c.h"
@@ -1967,13 +1968,6 @@ int SDL_RecreateWindow(SDL_Window *window, Uint32 flags)
         SDL_HideWindow(window);
     }
 
-    /* Tear down the old native window */
-    SDL_DestroyWindowSurface(window);
-
-    if (_this->DestroyWindow && !(flags & SDL_WINDOW_FOREIGN)) {
-        _this->DestroyWindow(_this, window);
-    }
-
     if ((window->flags & SDL_WINDOW_OPENGL) != (flags & SDL_WINDOW_OPENGL)) {
         if (flags & SDL_WINDOW_OPENGL) {
             need_gl_load = SDL_TRUE;
@@ -2002,6 +1996,13 @@ int SDL_RecreateWindow(SDL_Window *window, Uint32 flags)
 
     if (need_vulkan_unload) {
         SDL_Vulkan_UnloadLibrary();
+    }
+
+	/* Tear down the old native window */
+    SDL_DestroyWindowSurface(window);
+
+    if (_this->DestroyWindow && !(flags & SDL_WINDOW_FOREIGN)) {
+        _this->DestroyWindow(_this, window);
     }
 
     if (need_gl_load) {
@@ -2833,6 +2834,12 @@ int SDL_DestroyWindowSurface(SDL_Window *window)
         window->surface = NULL;
         window->surface_valid = SDL_FALSE;
     }
+	if (window->flags & SDL_WINDOW_OPENGL) {
+        SDL_GL_UnloadLibrary();
+    }
+    if (window->flags & SDL_WINDOW_VULKAN) {
+        SDL_Vulkan_UnloadLibrary();
+    }
 
     if (_this->checked_texture_framebuffer) { /* never checked? No framebuffer to destroy. Don't risk calling the wrong implementation. */
         if (_this->DestroyWindowFramebuffer) {
@@ -3352,12 +3359,6 @@ void SDL_DestroyWindow(SDL_Window *window)
     if (_this->DestroyWindow) {
         _this->DestroyWindow(_this, window);
     }
-    if (window->flags & SDL_WINDOW_OPENGL) {
-        SDL_GL_UnloadLibrary();
-    }
-    if (window->flags & SDL_WINDOW_VULKAN) {
-        SDL_Vulkan_UnloadLibrary();
-    }
 
     display = SDL_GetDisplayForWindow(window);
     if (display->fullscreen_window == window) {
@@ -3527,6 +3528,30 @@ void *SDL_GL_GetProcAddress(const char *proc)
     return func;
 }
 
+void *SDL_EGL_GetProcAddress(const char *proc)
+{
+	#if SDL_VIDEO_OPENGL_EGL
+		void *func;
+
+		if (!_this) {
+			SDL_UninitializedVideo();
+			return NULL;
+		}
+		func = NULL;
+
+		if (_this->egl_data) {
+			func = SDL_EGL_GetProcAddressInternal(_this, proc);
+		} else {
+			SDL_SetError("No EGL library has been loaded");
+		}
+
+		return func;
+	#else
+		SDL_SetError("SDL was not built with EGL support");
+		return NULL;
+	#endif
+}
+
 void SDL_GL_UnloadLibrary(void)
 {
     if (!_this) {
@@ -3666,11 +3691,27 @@ void SDL_GL_DeduceMaxSupportedESProfile(int *major, int *minor)
 #endif
 }
 
+void SDL_EGL_SetEGLAttributeCallbacks(SDL_EGLAttribArrayCallback platformAttribCallback,
+                                      SDL_EGLIntArrayCallback surfaceAttribCallback,
+                                      SDL_EGLIntArrayCallback contextAttribCallback)
+{
+    if (!_this) {
+        return;
+    }
+    _this->egl_platformattrib_callback = platformAttribCallback;
+    _this->egl_surfaceattrib_callback = surfaceAttribCallback;
+    _this->egl_contextattrib_callback = contextAttribCallback;
+}
+
 void SDL_GL_ResetAttributes(void)
 {
     if (!_this) {
         return;
     }
+
+	_this->egl_platformattrib_callback = NULL;
+    _this->egl_surfaceattrib_callback = NULL;
+    _this->egl_contextattrib_callback = NULL;
 
     _this->gl_config.red_size = 3;
     _this->gl_config.green_size = 3;
@@ -3718,6 +3759,8 @@ void SDL_GL_ResetAttributes(void)
     _this->gl_config.reset_notification = SDL_GL_CONTEXT_RESET_NO_NOTIFICATION;
 
     _this->gl_config.share_with_current_context = 0;
+
+	_this->gl_config.egl_platform = 0;
 }
 
 int SDL_GL_SetAttribute(SDL_GLattr attr, int value)
@@ -3832,6 +3875,9 @@ int SDL_GL_SetAttribute(SDL_GLattr attr, int value)
         break;
     case SDL_GL_CONTEXT_NO_ERROR:
         _this->gl_config.no_error = value;
+        break;
+	case SDL_GL_EGL_PLATFORM:
+        _this->gl_config.egl_platform = value;
         break;
     default:
         retval = SDL_SetError("Unknown OpenGL attribute");
@@ -4040,6 +4086,12 @@ int SDL_GL_GetAttribute(SDL_GLattr attr, int *value)
             *value = _this->gl_config.no_error;
             return 0;
         }
+	case SDL_GL_EGL_PLATFORM:
+        {
+            *value = _this->gl_config.egl_platform;
+            return 0;
+        }
+        break;
     case SDL_GL_FLOATBUFFERS:
     {
         if (_this->gl_config.HAS_GL_ARB_color_buffer_float) {
@@ -4188,6 +4240,63 @@ SDL_GLContext SDL_GL_GetCurrentContext(void)
         return NULL;
     }
     return (SDL_GLContext)SDL_TLSGet(_this->current_glctx_tls);
+}
+
+SDL_EGLDisplay SDL_EGL_GetCurrentEGLDisplay(void)
+{
+	#if SDL_VIDEO_OPENGL_EGL
+		if (!_this) {
+			SDL_UninitializedVideo();
+			return EGL_NO_DISPLAY;
+		}
+		if (!_this->egl_data) {
+			SDL_SetError("There is no current EGL display");
+			return EGL_NO_DISPLAY;
+		}
+		return _this->egl_data->egl_display;
+	#else
+		SDL_SetError("SDL was not built with EGL support");
+		return NULL;
+	#endif
+}
+
+SDL_EGLConfig SDL_EGL_GetCurrentEGLConfig(void)
+{
+	#if SDL_VIDEO_OPENGL_EGL
+		if (!_this) {
+			SDL_UninitializedVideo();
+			return NULL;
+		}
+		if (!_this->egl_data) {
+			SDL_SetError("There is no current EGL display");
+			return NULL;
+		}
+		return _this->egl_data->egl_config;
+	#else
+		SDL_SetError("SDL was not built with EGL support");
+		return NULL;
+	#endif
+}
+
+SDL_EGLConfig SDL_EGL_GetWindowEGLSurface(SDL_Window * window)
+{
+	#if SDL_VIDEO_OPENGL_EGL
+		if (!_this) {
+			SDL_UninitializedVideo();
+			return NULL;
+		}
+		if (!_this->egl_data) {
+			SDL_SetError("There is no current EGL display");
+			return NULL;
+		}
+		if (_this->GL_GetEGLSurface) {
+			return _this->GL_GetEGLSurface(_this, window);
+		}
+		return NULL;
+	#else
+		SDL_SetError("SDL was not built with EGL support");
+		return NULL;
+	#endif
 }
 
 void SDL_GL_GetDrawableSize(SDL_Window * window, int *w, int *h)

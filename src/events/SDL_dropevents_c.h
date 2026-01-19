@@ -23,6 +23,8 @@
 #ifndef SDL_dropevents_c_h_
 #define SDL_dropevents_c_h_
 
+extern int SDL_SendDragEnter(SDL_Window *window);
+extern int SDL_SendDragExit(SDL_Window *window);
 extern int SDL_SendDropFile(SDL_Window *window, const char *file);
 extern int SDL_SendDropText(SDL_Window *window, const char *text);
 extern int SDL_SendDropComplete(SDL_Window *window);

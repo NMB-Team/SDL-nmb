@@ -485,7 +485,13 @@ static void SDL_LogEvent(const SDL_Event *event)
         break;
 
 #define PRINT_DROP_EVENT(event) (void)SDL_snprintf(details, sizeof(details), " (file='%s' timestamp=%u windowid=%u)", event->drop.file, (uint)event->drop.timestamp, (uint)event->drop.windowID)
-        SDL_EVENT_CASE(SDL_DROPFILE)
+		SDL_EVENT_CASE(SDL_DRAGENTER)
+		PRINT_DROP_EVENT(event);
+		break;
+        SDL_EVENT_CASE(SDL_DRAGEXIT)
+		PRINT_DROP_EVENT(event);
+		break;
+		SDL_EVENT_CASE(SDL_DROPFILE)
         PRINT_DROP_EVENT(event);
         break;
         SDL_EVENT_CASE(SDL_DROPTEXT)

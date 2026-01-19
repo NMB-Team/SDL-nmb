@@ -1699,6 +1699,8 @@ static void data_device_handle_enter(void *data, struct wl_data_device *wl_data_
                                       dnd_action, dnd_action);
         }
 
+		SDL_SendDragEnter(NULL);
+
         /* find the current window */
         if (surface && SDL_WAYLAND_own_surface(surface)) {
            SDL_WindowData *window = (SDL_WindowData *)wl_surface_get_user_data(surface);
@@ -1716,6 +1718,8 @@ static void data_device_handle_leave(void *data, struct wl_data_device *wl_data_
     if (data_device->drag_offer) {
         Wayland_data_offer_destroy(data_device->drag_offer);
         data_device->drag_offer = NULL;
+
+		SDL_SendDragExit(NULL);
     }
 }
 

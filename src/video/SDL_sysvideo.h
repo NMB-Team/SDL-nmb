@@ -103,6 +103,7 @@ struct SDL_Window
     SDL_bool is_hiding;
     SDL_bool is_destroying;
     SDL_bool is_dropping; /* drag/drop in progress, expecting SDL_SendDropComplete(). */
+	SDL_bool is_dragging; /* drag/drop in progress, expecting SDL_SendDropComplete(). */
 
     SDL_Rect mouse_rect;
 
@@ -283,6 +284,7 @@ struct SDL_VideoDevice
       SDL_GLContext(*GL_CreateContext) (_THIS, SDL_Window * window);
     int (*GL_MakeCurrent) (_THIS, SDL_Window * window, SDL_GLContext context);
     void (*GL_GetDrawableSize) (_THIS, SDL_Window * window, int *w, int *h);
+	SDL_EGLSurface (*GL_GetEGLSurface) (_THIS, SDL_Window * window);
     int (*GL_SetSwapInterval) (_THIS, int interval);
     int (*GL_GetSwapInterval) (_THIS);
     int (*GL_SwapWindow) (_THIS, SDL_Window * window);
@@ -398,11 +400,16 @@ struct SDL_VideoDevice
         int framebuffer_srgb_capable;
         int no_error;
         int retained_backing;
+		int egl_platform;
         int driver_loaded;
         int HAS_GL_ARB_color_buffer_float;
         char driver_path[256];
         void *dll_handle;
     } gl_config;
+
+	SDL_EGLAttribArrayCallback egl_platformattrib_callback;
+    SDL_EGLIntArrayCallback egl_surfaceattrib_callback;
+    SDL_EGLIntArrayCallback egl_contextattrib_callback;
 
     /* * * */
     /* Cache current GL context; don't call the OS when it hasn't changed. */

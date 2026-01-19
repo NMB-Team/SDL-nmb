@@ -1813,6 +1813,12 @@ static void SDLTest_PrintEvent(SDL_Event *event)
     case SDL_APP_DIDENTERFOREGROUND:
         SDL_Log("SDL EVENT: App entered the foreground");
         break;
+	case SDL_DRAGENTER:
+        SDL_Log("SDL EVENT: Drag and drop start");
+        break;
+    case SDL_DRAGEXIT:
+        SDL_Log("SDL EVENT: Drag and drop stop");
+        break;
     case SDL_DROPBEGIN:
         SDL_Log("SDL EVENT: Drag and drop beginning");
         break;

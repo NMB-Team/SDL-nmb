@@ -281,10 +281,12 @@ static SDL_VideoDevice *X11_CreateDevice(void)
     device->GL_GetSwapInterval = X11_GL_GetSwapInterval;
     device->GL_SwapWindow = X11_GL_SwapWindow;
     device->GL_DeleteContext = X11_GL_DeleteContext;
+	device->GL_GetEGLSurface = NULL;
 #endif
 #ifdef SDL_VIDEO_OPENGL_EGL
 #ifdef SDL_VIDEO_OPENGL_GLX
-    if (SDL_GetHintBoolean(SDL_HINT_VIDEO_X11_FORCE_EGL, SDL_FALSE)) {
+    if (SDL_GetHintBoolean(SDL_HINT_VIDEO_FORCE_EGL, SDL_FALSE) ||
+        SDL_GetHintBoolean(SDL_HINT_VIDEO_X11_FORCE_EGL, SDL_FALSE)) {
 #endif
         device->GL_LoadLibrary = X11_GLES_LoadLibrary;
         device->GL_GetProcAddress = X11_GLES_GetProcAddress;
@@ -295,6 +297,7 @@ static SDL_VideoDevice *X11_CreateDevice(void)
         device->GL_GetSwapInterval = X11_GLES_GetSwapInterval;
         device->GL_SwapWindow = X11_GLES_SwapWindow;
         device->GL_DeleteContext = X11_GLES_DeleteContext;
+		device->GL_GetEGLSurface = X11_GLES_GetEGLSurface;
 #ifdef SDL_VIDEO_OPENGL_GLX
     }
 #endif
@@ -446,6 +449,7 @@ int X11_VideoInit(_THIS)
     GET_ATOM(UTF8_STRING);
     GET_ATOM(PRIMARY);
     GET_ATOM(XdndEnter);
+	GET_ATOM(XdndLeave);
     GET_ATOM(XdndPosition);
     GET_ATOM(XdndStatus);
     GET_ATOM(XdndTypeList);
