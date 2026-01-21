@@ -29,7 +29,7 @@
 #ifndef SDL_cocoametalview_h_
 #define SDL_cocoametalview_h_
 
-#if defined(SDL_VIDEO_DRIVER_COCOA) && (defined(SDL_VIDEO_VULKAN) || defined(SDL_VIDEO_METAL))
+#if SDL_VIDEO_DRIVER_COCOA && (SDL_VIDEO_VULKAN || SDL_VIDEO_OPENGL_EGL || SDL_VIDEO_METAL)
 
 #import "../SDL_sysvideo.h"
 
@@ -67,4 +67,3 @@ void Cocoa_Metal_GetDrawableSize(_THIS, SDL_Window * window, int * w, int * h);
 #endif /* SDL_cocoametalview_h_ */
 
 /* vi: set ts=4 sw=4 expandtab: */
-

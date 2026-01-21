@@ -25,6 +25,7 @@
 #include "SDL_cocoavideo.h"
 #include "SDL_cocoaopengles.h"
 #include "SDL_cocoaopengl.h"
+#include "SDL_cocoametalview.h"
 
 /* EGL implementation of SDL OpenGL support */
 
@@ -135,7 +136,7 @@ int Cocoa_GLES_SetupWindow(_THIS, SDL_Window * window)
     SDL_WindowData *windowdata = (__bridge SDL_WindowData *) window->driverdata;
     SDL_Window *current_win = SDL_GL_GetCurrentWindow();
     SDL_GLContext current_ctx = SDL_GL_GetCurrentContext();
-
+	SDL_MetalView metalview;
 
     if (_this->egl_data == NULL) {
         /* !!! FIXME: commenting out this assertion is (I think) incorrect; figure out why driver_loaded is wrong for ANGLE instead. --ryan. */
@@ -149,11 +150,34 @@ int Cocoa_GLES_SetupWindow(_THIS, SDL_Window * window)
         _this->gl_config.driver_loaded = 1;
     }
 
+	/* Create the Metal view for window */
+    metalview = Cocoa_Metal_CreateView(_this, window);
+    if (metalview == NULL) {
+        return SDL_SetError("Could not create Metal view for window");
+    }
+
+	/* Access the CAMetalLayer to control color space and compositing behavior */
+    CAMetalLayer *layer = (__bridge CAMetalLayer *)Cocoa_Metal_GetLayer(_this, metalview);
+    if (layer != nil) {
+        /* Force Display P3 color space to prevent washed-out rendering */
+        CGColorSpaceRef p3 = CGColorSpaceCreateWithName(kCGColorSpaceDisplayP3);
+        layer.colorspace = p3;
+        CGColorSpaceRelease(p3);
+
+        /* Disable extended dynamic range to keep SDR brightness consistent */
+        if (@available(macOS 10.15, *)) {
+            layer.wantsExtendedDynamicRangeContent = NO;
+        }
+
+        /* Mark the layer as opaque to avoid unnecessary compositor blending */
+        layer.opaque = YES;
+    }
+
     /* Create the GLES window surface */
-    v = windowdata.nswindow.contentView;
-    windowdata.egl_surface = SDL_EGL_CreateSurface(_this, (__bridge NativeWindowType)[v layer]);
+	windowdata.egl_surface = SDL_EGL_CreateSurface(_this, (__bridge NativeWindowType)layer);
 
     if (windowdata.egl_surface == EGL_NO_SURFACE) {
+		Cocoa_Metal_DestroyView(_this, metalview);
         return SDL_SetError("Could not create GLES window surface");
     }
 
