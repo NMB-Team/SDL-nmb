@@ -551,21 +551,21 @@ int SDL_EGL_LoadLibrary(_THIS, const char *egl_path, NativeDisplayType native_di
 			0x3038 /* EGL_NONE */
 		};
 
-		_this->egl_data->egl_display = SDL_EGL_GetPlatformDisplayANGLE(_this, (EGLenum)0x3202 /* EGL_PLATFORM_ANGLE_ANGLE */, native_display, display_attribs);
+		_this->egl_data->egl_display = SDL_EGL_GetPlatformDisplayANGLE(_this, (EGLenum)0x3202 /* EGL_PLATFORM_ANGLE_ANGLE */, (void*)(uintptr_t)native_display, display_attribs);
 	#elif defined(SDL_VIDEO_DRIVER_X11)
 		const EGLAttrib display_attribs[] = {
 			0x3203 /* EGL_PLATFORM_ANGLE_TYPE_ANGLE */, 0x3450 /* EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE */,
 			0x3038 /* EGL_NONE */
 		};
 
-		_this->egl_data->egl_display = SDL_EGL_GetPlatformDisplayANGLE(_this, (EGLenum)0x3202 /* EGL_PLATFORM_ANGLE_ANGLE */, native_display, display_attribs);
+		_this->egl_data->egl_display = SDL_EGL_GetPlatformDisplayANGLE(_this, (EGLenum)0x3202 /* EGL_PLATFORM_ANGLE_ANGLE */, (void*)(uintptr_t)native_display, display_attribs);
 	#elif defined(SDL_VIDEO_DRIVER_WINDOWS)
 		const EGLAttrib vulkan_attribs[] = {
 			0x3203 /* EGL_PLATFORM_ANGLE_TYPE_ANGLE */, 0x3450 /* EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE */,
 			0x3038 /* EGL_NONE */
 		};
 
-		_this->egl_data->egl_display = SDL_EGL_GetPlatformDisplayANGLE(_this, (EGLenum)0x3202 /* EGL_PLATFORM_ANGLE_ANGLE */, native_display, vulkan_attribs);
+		_this->egl_data->egl_display = SDL_EGL_GetPlatformDisplayANGLE(_this, (EGLenum)0x3202 /* EGL_PLATFORM_ANGLE_ANGLE */, (void*)(uintptr_t)native_display, vulkan_attribs);
 
 		if (_this->egl_data->egl_display != EGL_NO_DISPLAY) {
 			already_initialized = _this->egl_data->eglInitialize(_this->egl_data->egl_display, NULL, NULL);
@@ -582,7 +582,7 @@ int SDL_EGL_LoadLibrary(_THIS, const char *egl_path, NativeDisplayType native_di
 				0x3038 /* EGL_NONE */
 			};
 
-			_this->egl_data->egl_display = SDL_EGL_GetPlatformDisplayANGLE(_this, (EGLenum)0x3202 /* EGL_PLATFORM_ANGLE_ANGLE */, native_display, d3d11_attribs);
+			_this->egl_data->egl_display = SDL_EGL_GetPlatformDisplayANGLE(_this, (EGLenum)0x3202 /* EGL_PLATFORM_ANGLE_ANGLE */, (void*)(uintptr_t)native_display, d3d11_attribs);
 		}
 	#else
 		if (platform) {
