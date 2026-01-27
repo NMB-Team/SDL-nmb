@@ -49,7 +49,7 @@ typedef struct SDL_EGL_VideoData
                                 const EGLAttrib *attrib_list);
     EGLDisplay(EGLAPIENTRY *eglGetPlatformDisplayEXT) (EGLenum platform,
                                 void *native_display,
-                                const EGLint *attrib_list);
+                                const EGLAttrib *attrib_list);
     EGLBoolean(EGLAPIENTRY *eglInitialize) (EGLDisplay dpy, EGLint * major,
                                 EGLint * minor);
     EGLBoolean(EGLAPIENTRY  *eglTerminate) (EGLDisplay dpy);
