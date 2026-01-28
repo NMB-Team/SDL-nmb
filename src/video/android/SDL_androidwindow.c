@@ -54,8 +54,15 @@ int Android_CreateWindow(_THIS, SDL_Window *window)
     /* Adjust the window data to match the screen */
     window->x = 0;
     window->y = 0;
-    window->w = Android_SurfaceWidth;
-    window->h = Android_SurfaceHeight;
+    if (Android_IsInMultiWindowMode() || SDL_IsDeXMode() || SDL_IsChromebook()) {
+        window->w = Android_SurfaceWidth;
+        window->h = Android_SurfaceHeight;
+    } else {
+        const char *scale_hint = SDL_GetHint("SDL_ANDROID_DRAW_SCALE");
+        float scale = scale_hint ? atof(scale_hint) : 1.0;
+        window->w = (int)(Android_SurfaceWidth * scale);
+        window->h = (int)(Android_SurfaceHeight * scale);
+    }
 
     window->flags &= ~SDL_WINDOW_HIDDEN;
     window->flags |= SDL_WINDOW_SHOWN; /* only one window on Android */

@@ -28,6 +28,7 @@
 #ifdef SDL_VIDEO_DRIVER_ANDROID
 #include <android/native_window.h>
 #include "../video/android/SDL_androidvideo.h"
+#include "../core/android/SDL_android.h"
 #endif
 #ifdef SDL_VIDEO_DRIVER_RPI
 #include <unistd.h>
@@ -1282,8 +1283,17 @@ EGLSurface *SDL_EGL_CreateSurface(_THIS, NativeWindowType nw)
                                         _this->egl_data->egl_config,
                                         EGL_NATIVE_VISUAL_ID, &format_wanted);
 
+    const char *scale_hint = SDL_GetHint("SDL_ANDROID_DRAW_SCALE");
+    float scale = scale_hint ? atof(scale_hint) : 1.0;
+
     /* Format based on selected egl config. */
-    ANativeWindow_setBuffersGeometry(nw, 0, 0, format_wanted);
+    if (scale > 0.0 && scale < 1.0 && !(Android_IsInMultiWindowMode() || SDL_IsDeXMode() || SDL_IsChromebook())) {
+        int nativeWidth = ANativeWindow_getWidth(nw);
+        int nativeHeight = ANativeWindow_getHeight(nw);
+        ANativeWindow_setBuffersGeometry(nw, (int)(nativeWidth * scale), (int)(nativeHeight * scale), format_wanted);
+    } else {
+        ANativeWindow_setBuffersGeometry(nw, 0, 0, format_wanted);
+    }
 #endif
 
     if (_this->gl_config.framebuffer_srgb_capable) {

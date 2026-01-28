@@ -293,7 +293,22 @@ void Android_SendResize(SDL_Window *window)
         display->display_modes[0].refresh_rate = Android_ScreenRate;
         display->current_mode = display->display_modes[0];
 
-        SDL_SendWindowEvent(window, SDL_WINDOWEVENT_RESIZED, Android_SurfaceWidth, Android_SurfaceHeight);
+        SDL_WindowData *data = (SDL_WindowData *)window->driverdata;
+        ANativeWindow* nw = (ANativeWindow*)data->native_window;
+        const char *scale_hint = SDL_GetHint("SDL_ANDROID_DRAW_SCALE");
+        float scale = scale_hint ? atof(scale_hint) : 1.0;
+        int32_t format_wanted = ANativeWindow_getFormat(nw);
+        int new_w = Android_SurfaceWidth;
+        int new_h = Android_SurfaceHeight;
+
+        if (Android_IsInMultiWindowMode() || SDL_IsDeXMode() || SDL_IsChromebook()) {
+            ANativeWindow_setBuffersGeometry(nw, 0, 0, format_wanted);
+        } else {
+            new_w = (int)(new_w * scale);
+            new_h = (int)(new_h * scale);
+            ANativeWindow_setBuffersGeometry(nw, new_w, new_h, format_wanted);
+        }
+        SDL_SendWindowEvent(window, SDL_WINDOWEVENT_RESIZED, new_w, new_h);
     }
 }
 
