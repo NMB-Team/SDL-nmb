@@ -30,7 +30,7 @@
 
 #import "SDL_cocoametalview.h"
 
-#if defined(SDL_VIDEO_DRIVER_COCOA) && (defined(SDL_VIDEO_VULKAN) || defined(SDL_VIDEO_METAL))
+#if defined(SDL_VIDEO_DRIVER_COCOA) && (defined(SDL_VIDEO_OPENGL_EGL) || defined(SDL_VIDEO_VULKAN) || defined(SDL_VIDEO_METAL))
 
 static bool SDLCALL SDL_MetalViewEventWatch(void *userdata, SDL_Event *event)
 {

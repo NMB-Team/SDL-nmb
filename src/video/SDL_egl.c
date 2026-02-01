@@ -111,12 +111,12 @@
 
 #else
 // Desktop Linux/Unix-like
-#define DEFAULT_OGL        "libGL.so.1"
-#define DEFAULT_EGL        "libEGL.so.1"
-#define ALT_OGL            "libOpenGL.so.0"
-#define DEFAULT_OGL_ES2    "libGLESv2.so.2"
-#define DEFAULT_OGL_ES_PVR "libGLES_CM.so.1"
-#define DEFAULT_OGL_ES     "libGLESv1_CM.so.1"
+#define DEFAULT_OGL        "libGL.so"
+#define DEFAULT_EGL        "libEGL.so"
+#define ALT_OGL            "libOpenGL.so"
+#define DEFAULT_OGL_ES2    "libGLESv2.so"
+#define DEFAULT_OGL_ES_PVR "libGLES_CM.so"
+#define DEFAULT_OGL_ES     "libGLESv1_CM.so"
 
 SDL_ELF_NOTE_DLOPEN(
     "egl-opengl",
@@ -539,6 +539,26 @@ static void SDL_EGL_GetVersion(SDL_VideoDevice *_this)
     }
 }
 
+#ifndef SDL_VIDEO_DRIVER_VITA
+static EGLDisplay SDL_EGL_GetPlatformDisplayANGLE(SDL_VideoDevice *_this, EGLenum platform, NativeDisplayType native_display, const EGLAttrib *attrib_list)
+{
+    EGLDisplay display = EGL_NO_DISPLAY;
+
+	if (_this->egl_data->eglGetPlatformDisplay) {
+		display = _this->egl_data->eglGetPlatformDisplay(platform, (void *)(uintptr_t)native_display, attrib_list);
+	} else {
+        if (SDL_EGL_HasExtension(_this, SDL_EGL_CLIENT_EXTENSION, "EGL_EXT_platform_base")) {
+            _this->egl_data->eglGetPlatformDisplayEXT = (PFNEGLGETPLATFORMDISPLAYEXTPROC)SDL_EGL_GetProcAddressInternal(_this, "eglGetPlatformDisplayEXT");
+            if (_this->egl_data->eglGetPlatformDisplayEXT) {
+                _this->egl_data->egl_display = _this->egl_data->eglGetPlatformDisplayEXT(platform, (void *)(uintptr_t)native_display, (const EGLint *)attrib_list);
+            }
+		}
+	}
+
+    return display;
+}
+#endif
+
 bool SDL_EGL_LoadLibrary(SDL_VideoDevice *_this, const char *egl_path, NativeDisplayType native_display, EGLenum platform)
 {
     if (!SDL_EGL_LoadLibraryOnly(_this, egl_path)) {
@@ -547,41 +567,76 @@ bool SDL_EGL_LoadLibrary(SDL_VideoDevice *_this, const char *egl_path, NativeDis
 
     _this->egl_data->egl_display = EGL_NO_DISPLAY;
 
+	EGLBoolean already_initialized = EGL_FALSE;
+
 #ifndef SDL_VIDEO_DRIVER_VITA
-    if (platform) {
-        /* EGL 1.5 allows querying for client version with EGL_NO_DISPLAY
-         * --
-         * Khronos doc: "EGL_BAD_DISPLAY is generated if display is not an EGL display connection, unless display is EGL_NO_DISPLAY and name is EGL_EXTENSIONS."
-         * Therefore SDL_EGL_GetVersion() shouldn't work with uninitialized display.
-         * - it actually doesn't work on Android that has 1.5 egl client
-         * - it works on desktop X11 (using SDL_VIDEO_FORCE_EGL=1) */
-        SDL_EGL_GetVersion(_this);
+/* EGL 1.5 allows querying for client version with EGL_NO_DISPLAY
+     * --
+     * Khronos doc: "EGL_BAD_DISPLAY is generated if display is not an EGL display connection, unless display is EGL_NO_DISPLAY and name is EGL_EXTENSIONS."
+     * Therefore SDL_EGL_GetVersion() shouldn't work with uninitialized display.
+     * - it actually doesn't work on Android that has 1.5 egl client
+     * - it works on desktop X11 (using SDL_VIDEO_FORCE_EGL=1) */
+    SDL_EGL_GetVersion(_this);
 
-        if (_this->egl_data->egl_version_major == 1 && _this->egl_data->egl_version_minor == 5) {
-            LOAD_FUNC(PFNEGLGETPLATFORMDISPLAYPROC, eglGetPlatformDisplay);
-        }
+    if (_this->egl_data->egl_version_major == 1 && _this->egl_data->egl_version_minor == 5) {
+        LOAD_FUNC(PFNEGLGETPLATFORMDISPLAYPROC, eglGetPlatformDisplay);
+    }
 
-        if (_this->egl_data->eglGetPlatformDisplay) {
-            EGLAttrib *attribs = NULL;
-            if (_this->egl_platformattrib_callback) {
-                attribs = _this->egl_platformattrib_callback(_this->egl_attrib_callback_userdata);
-                if (!attribs) {
-                    _this->gl_config.driver_loaded = 0;
-                    *_this->gl_config.driver_path = '\0';
-                    return SDL_SetError("EGL platform attribute callback returned NULL pointer");
-                }
-            }
-            _this->egl_data->egl_display = _this->egl_data->eglGetPlatformDisplay(platform, (void *)(uintptr_t)native_display, attribs);
-            SDL_free(attribs);
-        } else {
-            if (SDL_EGL_HasExtension(_this, SDL_EGL_CLIENT_EXTENSION, "EGL_EXT_platform_base")) {
-                _this->egl_data->eglGetPlatformDisplayEXT = (PFNEGLGETPLATFORMDISPLAYEXTPROC)SDL_EGL_GetProcAddressInternal(_this, "eglGetPlatformDisplayEXT");
-                if (_this->egl_data->eglGetPlatformDisplayEXT) {
-                    _this->egl_data->egl_display = _this->egl_data->eglGetPlatformDisplayEXT(platform, (void *)(uintptr_t)native_display, NULL);
-                }
-            }
+#if defined(SDL_VIDEO_DRIVER_COCOA)
+    const EGLAttrib display_attribs[] = {
+        0x3203 /* EGL_PLATFORM_ANGLE_TYPE_ANGLE */, 0x3489 /* EGL_PLATFORM_ANGLE_TYPE_METAL_ANGLE */,
+        0x3482 /* EGL_POWER_PREFERENCE_ANGLE */, 0x0002 /* EGL_HIGH_POWER_ANGLE */,
+        0x3038 /* EGL_NONE */
+    };
+
+    _this->egl_data->egl_display = SDL_EGL_GetPlatformDisplayANGLE(_this, (EGLenum)0x3202 /* EGL_PLATFORM_ANGLE_ANGLE */, native_display, display_attribs);
+#elif defined(SDL_VIDEO_DRIVER_X11)
+    const EGLAttrib display_attribs[] = {
+        0x3203 /* EGL_PLATFORM_ANGLE_TYPE_ANGLE */, 0x3450 /* EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE */,
+        0x3038 /* EGL_NONE */
+    };
+
+    _this->egl_data->egl_display = SDL_EGL_GetPlatformDisplayANGLE(_this, (EGLenum)0x3202 /* EGL_PLATFORM_ANGLE_ANGLE */, native_display, display_attribs);
+#elif defined(SDL_VIDEO_DRIVER_WINDOWS)
+    const EGLAttrib vulkan_attribs[] = {
+        0x3203 /* EGL_PLATFORM_ANGLE_TYPE_ANGLE */, 0x3450 /* EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE */,
+        0x3038 /* EGL_NONE */
+    };
+
+    _this->egl_data->egl_display = SDL_EGL_GetPlatformDisplayANGLE(_this, (EGLenum)0x3202 /* EGL_PLATFORM_ANGLE_ANGLE */, native_display, vulkan_attribs);
+
+    if (_this->egl_data->egl_display != EGL_NO_DISPLAY) {
+        already_initialized = _this->egl_data->eglInitialize(_this->egl_data->egl_display, NULL, NULL);
+        if (!already_initialized) {
+            _this->egl_data->eglTerminate(_this->egl_data->egl_display);
+            _this->egl_data->egl_display = EGL_NO_DISPLAY;
         }
     }
+
+    if (_this->egl_data->egl_display == EGL_NO_DISPLAY)
+    {
+        const EGLAttrib d3d11_attribs[] = {
+            0x3203 /* EGL_PLATFORM_ANGLE_TYPE_ANGLE */, 0x3208 /* EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE */,
+            0x3038 /* EGL_NONE */
+        };
+
+        _this->egl_data->egl_display = SDL_EGL_GetPlatformDisplayANGLE(_this, (EGLenum)0x3202 /* EGL_PLATFORM_ANGLE_ANGLE */, native_display, d3d11_attribs);
+    }
+#else
+    if (platform) {
+        EGLAttrib *attribs = NULL;
+        if (_this->egl_platformattrib_callback) {
+            attribs = _this->egl_platformattrib_callback(_this->egl_attrib_callback_userdata);
+            if (!attribs) {
+                _this->gl_config.driver_loaded = 0;
+                *_this->gl_config.driver_path = '\0';
+                return SDL_SetError("EGL platform attribute callback returned NULL pointer");
+            }
+        }
+        _this->egl_data->egl_display = SDL_EGL_GetPlatformDisplayANGLE(_this, platform, native_display, attribs);
+        SDL_free(attribs);
+    }
+#endif
 #endif
     // Try the implementation-specific eglGetDisplay even if eglGetPlatformDisplay fails
     if ((_this->egl_data->egl_display == EGL_NO_DISPLAY) &&
@@ -595,7 +650,7 @@ bool SDL_EGL_LoadLibrary(SDL_VideoDevice *_this, const char *egl_path, NativeDis
         return SDL_SetError("Could not get EGL display");
     }
 
-    if (_this->egl_data->eglInitialize(_this->egl_data->egl_display, NULL, NULL) != EGL_TRUE) {
+    if (!already_initialized && _this->egl_data->eglInitialize(_this->egl_data->egl_display, NULL, NULL) != EGL_TRUE) {
         _this->gl_config.driver_loaded = 0;
         *_this->gl_config.driver_path = '\0';
         return SDL_SetError("Could not initialize EGL");
