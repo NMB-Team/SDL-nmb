@@ -303,7 +303,7 @@ static UINT D3D12_Align(UINT location, UINT alignment)
 }
 
 static const struct {
-    Uint32 sdl;
+    SDL_PixelFormat sdl;
     DXGI_FORMAT unorm;
     DXGI_FORMAT srgb;
 } dxgi_format_map[] = {
@@ -328,7 +328,7 @@ static SDL_PixelFormat D3D12_DXGIFormatToSDLPixelFormat(DXGI_FORMAT dxgiFormat)
     return SDL_PIXELFORMAT_UNKNOWN;
 }
 
-static DXGI_FORMAT SDLPixelFormatToDXGITextureFormat(Uint32 format, Uint32 output_colorspace)
+static DXGI_FORMAT SDLPixelFormatToDXGITextureFormat(SDL_PixelFormat format, Uint32 output_colorspace)
 {
     switch (format) {
     case SDL_PIXELFORMAT_INDEX8:
@@ -354,7 +354,7 @@ static DXGI_FORMAT SDLPixelFormatToDXGITextureFormat(Uint32 format, Uint32 outpu
     }
 }
 
-static DXGI_FORMAT SDLPixelFormatToDXGIMainResourceViewFormat(Uint32 format, Uint32 colorspace)
+static DXGI_FORMAT SDLPixelFormatToDXGIMainResourceViewFormat(SDL_PixelFormat format, Uint32 colorspace)
 {
     switch (format) {
     case SDL_PIXELFORMAT_INDEX8:
