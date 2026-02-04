@@ -569,7 +569,7 @@ static EGLDisplay SDL_EGL_GetPlatformDisplayANGLE(SDL_VideoDevice *_this, EGLenu
 }
 #endif
 
-bool SDL_EGL_LoadLibrary(SDL_VideoDevice *_this, const char *egl_path, NativeDisplayType native_display, EGLenum platform)
+bool SDL_EGL_LoadLibrary(SDL_VideoDevice *_this, const char *egl_path, NativeDisplayType native_display)
 {
     if (!SDL_EGL_LoadLibraryOnly(_this, egl_path)) {
         return false;
@@ -580,7 +580,9 @@ bool SDL_EGL_LoadLibrary(SDL_VideoDevice *_this, const char *egl_path, NativeDis
 	EGLBoolean already_initialized = EGL_FALSE;
 
 #ifndef SDL_VIDEO_DRIVER_VITA
-/* EGL 1.5 allows querying for client version with EGL_NO_DISPLAY
+    EGLenum platform = _this->gl_config.egl_platform;
+
+	/* EGL 1.5 allows querying for client version with EGL_NO_DISPLAY
      * --
      * Khronos doc: "EGL_BAD_DISPLAY is generated if display is not an EGL display connection, unless display is EGL_NO_DISPLAY and name is EGL_EXTENSIONS."
      * Therefore SDL_EGL_GetVersion() shouldn't work with uninitialized display.

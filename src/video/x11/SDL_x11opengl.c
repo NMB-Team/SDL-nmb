@@ -583,9 +583,9 @@ static int X11_GL_GetAttributes(SDL_VideoDevice *_this, Display *display, int sc
         attribs[i++] = GLX_RGBA_FLOAT_TYPE_ARB;
     }
 
-    if ((_this->gl_config.framebuffer_srgb_capable >= 0) && _this->gl_data->HAS_GLX_ARB_framebuffer_sRGB) {
+    if (_this->gl_data->HAS_GLX_ARB_framebuffer_sRGB && _this->gl_config.framebuffer_srgb_capable) {
         attribs[i++] = GLX_FRAMEBUFFER_SRGB_CAPABLE_ARB;
-        attribs[i++] = _this->gl_config.framebuffer_srgb_capable ? True : False; // always needed, for_FBConfig or not!
+        attribs[i++] = True; // always needed, for_FBConfig or not!
     }
 
     if (_this->gl_config.accelerated >= 0 &&
