@@ -26,6 +26,164 @@
 #include "SDL_hidapijoystick_c.h"
 #include "SDL_hidapi_rumble.h"
 
+#ifdef SDL_JOYSTICK_HIDAPI_GAMESIR
+
+// Define this if you want to log all packets from the controller
+#if 0
+#define DEBUG_GAMESIR_PROTOCOL
+#endif
+
+#define GAMESIR_PACKET_HEADER_0 0xA1
+#define GAMESIR_PACKET_HEADER_1_GAMEPAD 0xC8
+
+#define BTN_A        0x01
+#define BTN_B        0x02
+#define BTN_C        0x04
+#define BTN_X        0x08
+#define BTN_Y        0x10
+#define BTN_Z        0x20
+#define BTN_L1       0x40
+#define BTN_R1       0x80
+
+#define BTN_L2       0x01
+#define BTN_R2       0x02
+#define BTN_SELECT   0x04
+#define BTN_START    0x08
+#define BTN_HOME     0x10
+#define BTN_L3       0x20
+#define BTN_R3       0x40
+#define BTN_CAPTURE  0x80
+
+#define BTN_UP       0x01
+#define BTN_UP_L     0x08
+#define BTN_UP_R     0x02
+#define BTN_DOWN     0x05
+#define BTN_DOWN_L   0x06
+#define BTN_DOWN_R   0X04
+#define BTN_LEFT     0x07
+#define BTN_RIGHT    0x03
+
+#define BTN_M        0x10
+#define BTN_MUTE     0x20
+#define BTN_L4       0x40
+#define BTN_R4       0x80
+
+#define BTN_L5       0x01
+#define BTN_R5       0x02
+#define BTN_L6       0x04
+#define BTN_R6       0x08
+#define BTN_L7       0x10
+#define BTN_R7       0x20
+#define BTN_L8       0x40
+#define BTN_R8       0x80
+
+typedef struct {
+    Uint8 cmd;
+    Uint8 mode;
+} Gamesir_CommandMode;
+
+typedef struct {
+    bool sensors_supported;
+    bool sensors_enabled;
+    bool led_supported;
+    Uint64 sensor_timestamp_ns;
+    Uint64 sensor_timestamp_step_ns;
+    float accelScale;
+    float gyroScale;
+    bool last_state_initialized;
+    Uint8 last_state[USB_PACKET_LENGTH];
+    SDL_hid_device *output_handle;
+} SDL_DriverGamesir_Context;
+
+
+static void HIDAPI_DriverGameSir_RegisterHints(SDL_HintCallback callback, void *userdata)
+{
+    SDL_AddHintCallback(SDL_HINT_JOYSTICK_HIDAPI_GAMESIR, callback, userdata);
+}
+
+
+static void HIDAPI_DriverGameSir_UnregisterHints(SDL_HintCallback callback, void *userdata)
+{
+    SDL_RemoveHintCallback(SDL_HINT_JOYSTICK_HIDAPI_GAMESIR, callback, userdata);
+}
+
+
+static bool HIDAPI_DriverGameSir_IsEnabled(void)
+{
+    // Temporarily disabled by default until response from GameSir
+    //return SDL_GetHintBoolean(SDL_HINT_JOYSTICK_HIDAPI_GAMESIR, SDL_GetHintBoolean(SDL_HINT_JOYSTICK_HIDAPI, SDL_HIDAPI_DEFAULT));
+    return SDL_GetHintBoolean(SDL_HINT_JOYSTICK_HIDAPI_GAMESIR, false);
+}
+
+
+static bool HIDAPI_DriverGameSir_IsSupportedDevice(SDL_HIDAPI_Device *device, const char *name, SDL_GamepadType type, Uint16 vendor_id, Uint16 product_id, Uint16 version, int interface_number, int interface_class, int interface_subclass, int interface_protocol)
+{
+    return SDL_IsJoystickGameSirController(vendor_id, product_id);
+}
+
+static SDL_hid_device *HIDAPI_DriverGameSir_GetOutputHandle(SDL_HIDAPI_Device *device)
+{
+#if defined(SDL_PLATFORM_WIN32) || defined(SDL_PLATFORM_WINGDK)
+    SDL_DriverGamesir_Context *ctx = (SDL_DriverGamesir_Context *)device->context;
+    return ctx->output_handle;
+#else
+    return device->dev;
+#endif
+}
+
+static SDL_hid_device *HIDAPI_DriverGameSir_GetInputHandle(SDL_HIDAPI_Device *device, SDL_DriverGamesir_Context *ctx)
+{
+#if defined(_WIN32)
+    if (device->is_bluetooth) {
+        return device->dev;
+    }
+    if (ctx->output_handle) {
+        return ctx->output_handle;
+    }
+    return device->dev;
+#else
+    return device->dev;
+#endif
+}
+
+static bool SendGameSirModeSwitch(SDL_HIDAPI_Device *device)
+{
+    Gamesir_CommandMode cmd = { 0x01, 0x00 };
+    Uint8 buf[64];
+    SDL_zero(buf);
+    buf[0] = 0xA2;
+    SDL_memcpy(buf + 1, &cmd, sizeof(cmd));
+
+    SDL_hid_device *handle = HIDAPI_DriverGameSir_GetOutputHandle(device);
+    if (handle == NULL) {
+        return false;
+    }
+
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        int result = SDL_hid_write(handle, buf, sizeof(buf));
+        if (result < 0) {
+            return false;
+        }
+        for (int i = 0; i < 10; ++i) {
+            SDL_Delay(1);
+
+            Uint8 data[USB_PACKET_LENGTH] = {0};
+            int size = SDL_hid_read_timeout(handle, data, sizeof(data), 0);
+            if (size < 0) {
+                break;
+            }
+            if (size == 0) {
+                continue;
+            }
+
+            if (size == 64 && data[0] == 0xA1 && data[1] == 0x43 && data[2] == 0x01) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 /* ========================================================================= */
 /*  Win32 HID helper                                                         */
 /* ========================================================================= */
@@ -34,12 +192,6 @@
  * These APIs are NOT available on GDK platforms.
  */
 #if defined(SDL_PLATFORM_WIN32) && !defined(SDL_PLATFORM_GDK)
-#define SDL_HAS_WIN32_HID 1
-#else
-#define SDL_HAS_WIN32_HID 0
-#endif
-
-#if SDL_HAS_WIN32_HID
 
 /* --- Win32 HID includes ------------------------------------------------- */
 #include <windows.h>
@@ -158,236 +310,48 @@ static char *FindHIDInterfacePath(Uint16 vid, Uint16 pid, int collection_index)
     return NULL;
 }
 
-#else  /* !SDL_HAS_WIN32_HID */
-/* Stub for GDK / non-Win32 platforms */
+#endif // SDL_PLATFORM_WIN32 && !SDL_PLATFORM_GDK
 
-#if defined(__GNUC__) || defined(__clang__)
-#define SDL_UNUSED_FUNC __attribute__((unused))
-#else
-#define SDL_UNUSED_FUNC
-#endif
-
-static char *FindHIDInterfacePath(Uint16 vid, Uint16 pid, int collection_index) SDL_UNUSED_FUNC;
-static char *FindHIDInterfacePath(Uint16 vid, Uint16 pid, int collection_index)
-{
-    (void)vid;
-    (void)pid;
-    (void)collection_index;
-    return NULL;
-}
-
-#endif /* SDL_HAS_WIN32_HID */
-
-#ifdef SDL_JOYSTICK_HIDAPI_GAMESIR
-
-#define GAMESIR_PACKET_HEADER_0 0xA1
-#define GAMESIR_PACKET_HEADER_1_GAMEPAD 0xC8
-
-#define BTN_A        0x01
-#define BTN_B        0x02
-#define BTN_C        0x04
-#define BTN_X        0x08
-#define BTN_Y        0x10
-#define BTN_Z        0x20
-#define BTN_L1       0x40
-#define BTN_R1       0x80
-
-#define BTN_L2       0x01
-#define BTN_R2       0x02
-#define BTN_SELECT   0x04
-#define BTN_START    0x08
-#define BTN_HOME     0x10
-#define BTN_L3       0x20
-#define BTN_R3       0x40
-#define BTN_CAPTURE  0x80
-
-#define BTN_UP       0x01
-#define BTN_UP_L     0x08
-#define BTN_UP_R     0x02
-#define BTN_DOWN     0x05
-#define BTN_DOWN_L   0x06
-#define BTN_DOWN_R   0X04
-#define BTN_LEFT     0x07
-#define BTN_RIGHT    0x03
-
-#define BTN_M        0x10
-#define BTN_MUTE     0x20
-#define BTN_L4       0x40
-#define BTN_R4       0x80
-
-#define BTN_L5       0x01
-#define BTN_R5       0x02
-#define BTN_L6       0x04
-#define BTN_R6       0x08
-#define BTN_L7       0x10
-#define BTN_R7       0x20
-#define BTN_L8       0x40
-#define BTN_R8       0x80
-
-#ifndef DEG2RAD
-#define DEG2RAD(x) ((float)(x) * (float)(SDL_PI_F / 180.f))
-#endif
-
-#define LOAD16(A, B) (Sint16)((Uint16)(A) | (((Uint16)(B)) << 8))
-
-typedef struct {
-    Uint8 cmd;
-    Uint8 mode;
-} Gamesir_CommandMode;
-
-typedef struct {
-    bool sensors_supported;
-    bool sensors_enabled;
-    bool led_supported;
-    Uint64 sensor_timestamp_ns;
-    Uint64 sensor_timestamp_step_ns;
-    float accelScale;
-    float gyroScale;
-    bool last_state_initialized;
-    Uint8 last_state[USB_PACKET_LENGTH];
-    SDL_hid_device *output_handle;
-} SDL_DriverGamesir_Context;
-
-
-static void HIDAPI_DriverGameSir_RegisterHints(SDL_HintCallback callback, void *userdata)
-{
-    SDL_AddHintCallback(SDL_HINT_JOYSTICK_HIDAPI_GAMESIR, callback, userdata);
-}
-
-
-static void HIDAPI_DriverGameSir_UnregisterHints(SDL_HintCallback callback, void *userdata)
-{
-    SDL_RemoveHintCallback(SDL_HINT_JOYSTICK_HIDAPI_GAMESIR, callback, userdata);
-}
-
-
-static bool HIDAPI_DriverGameSir_IsEnabled(void)
-{
-    return SDL_GetHintBoolean(SDL_HINT_JOYSTICK_HIDAPI_GAMESIR, SDL_GetHintBoolean(SDL_HINT_JOYSTICK_HIDAPI, SDL_HIDAPI_DEFAULT));
-}
-
-
-static bool HIDAPI_DriverGameSir_IsSupportedDevice(SDL_HIDAPI_Device *device, const char *name, SDL_GamepadType type, Uint16 vendor_id, Uint16 product_id, Uint16 version, int interface_number, int interface_class, int interface_subclass, int interface_protocol)
-{
-    return SDL_IsJoystickGameSirController(vendor_id, product_id);
-}
-
-static SDL_hid_device *HIDAPI_DriverGameSir_GetOutputHandle(SDL_HIDAPI_Device *device)
-{
-#if defined(SDL_PLATFORM_WIN32) || defined(SDL_PLATFORM_WINGDK)
-    SDL_DriverGamesir_Context *ctx = (SDL_DriverGamesir_Context *)device->context;
-    if (ctx && ctx->output_handle) {
-        return ctx->output_handle;
-    }
-    return NULL;
-#else
-    return device->dev;
-#endif
-}
-
-static SDL_hid_device *HIDAPI_DriverGameSir_GetInputHandle(SDL_HIDAPI_Device *device, SDL_DriverGamesir_Context *ctx)
-{
-#if defined(_WIN32)
-    if (device->is_bluetooth) {
-        return device->dev;
-    }
-    if (ctx && ctx->output_handle) {
-        return ctx->output_handle;
-    }
-    return device->dev;
-#else
-    return device->dev;
-#endif
-}
-
-
-static bool SendGameSirModeSwitch(SDL_HIDAPI_Device *device)
-{
-    Gamesir_CommandMode cmd = { 0x01 };
-    Uint8 buf[64];
-    SDL_zero(buf);
-    buf[0] = 0xA2;
-    SDL_memcpy(buf + 1, &cmd, sizeof(cmd));
-
-    SDL_hid_device *handle = HIDAPI_DriverGameSir_GetOutputHandle(device);
-    SDL_assert(handle != NULL);
-    if (handle == NULL) {
-        return false;
-    }
-    for (int attempt = 0; attempt < 3; ++attempt) {
-        int result = SDL_hid_write(handle, buf, sizeof(buf));
-        if (result < 0) {
-            return false;
-        }
-        for (int i = 0; i < 10; ++i) {
-            SDL_Delay(1);
-
-            Uint8 data[USB_PACKET_LENGTH] = {0};
-            int size = SDL_hid_read_timeout(handle, data, sizeof(data), 0);
-            if (size < 0) {
-                break;
-            }
-            if (size == 0) {
-                continue;
-            }
-
-            if (size == 64 && data[0] == 0xA1 && data[1] == 0x43 && data[2] == 0x01) {
-                return true;
-            }
-        }
-    }
-
-    SDL_Delay(10);
-    return true;
-}
-
-static bool HIDAPI_DriverGameSir_InitDevice(SDL_HIDAPI_Device *device)
+static SDL_hid_device *GetOutputHandle(SDL_HIDAPI_Device *device)
 {
     Uint16 vendor_id = device->vendor_id;
     Uint16 product_id = device->product_id;
     SDL_hid_device *output_handle = NULL;
-
     struct SDL_hid_device_info *devs = SDL_hid_enumerate(vendor_id, product_id);
-    for (struct SDL_hid_device_info *info = devs; info; info = info->next) {
+    for (struct SDL_hid_device_info *info = devs; info && !output_handle; info = info->next) {
         if (info->interface_number == 0) {
-#if defined(SDL_PLATFORM_WIN32) || defined(SDL_PLATFORM_GDK)
-            if (!output_handle) {
-                char *col02_path = FindHIDInterfacePath(vendor_id, product_id, 2);
-                if (col02_path) {
-                    output_handle = SDL_hid_open_path(col02_path);
-                    SDL_free(col02_path);
-                }
+#if defined(SDL_PLATFORM_WIN32) && !defined(SDL_PLATFORM_GDK)
+            char *col02_path = FindHIDInterfacePath(vendor_id, product_id, 2);
+            if (col02_path) {
+                output_handle = SDL_hid_open_path(col02_path);
+                SDL_free(col02_path);
             }
 #endif
-        }
-        if (info->interface_number == -1) {
+        } else if (info->interface_number == -1) {
 #if defined(SDL_PLATFORM_WIN32) || defined(SDL_PLATFORM_WINGDK)
             if (info->usage_page == 0x0001 && info->usage == 0x0005) {
                 output_handle = SDL_hid_open_path(info->path);
-                if (output_handle) {
-                    SDL_LogDebug(SDL_LOG_CATEGORY_INPUT, "GameSir: Opened output interface via path pattern");
-                    break;
-                }
             }
 #endif
-        } else if (!output_handle && info->interface_number == 1) {
+        } else if (info->interface_number == 1) {
             output_handle = SDL_hid_open_path(info->path);
         }
     }
     SDL_hid_free_enumeration(devs);
 
+    return output_handle;
+}
+
+static bool HIDAPI_DriverGameSir_InitDevice(SDL_HIDAPI_Device *device)
+{
     SDL_DriverGamesir_Context *ctx = (SDL_DriverGamesir_Context *)SDL_calloc(1, sizeof(*ctx));
     if (!ctx) {
-        SDL_hid_close(device->dev);
-        if (output_handle) {
-            SDL_hid_close(output_handle);
-        }
         return false;
     }
+    device->context = ctx;
 
     ctx->led_supported = true;
-    ctx->output_handle = output_handle;
-    device->context = ctx;
+    ctx->output_handle = GetOutputHandle(device);
 
     switch (device->product_id) {
     case USB_PRODUCT_GAMESIR_GAMEPAD_G7_PRO_HID:
@@ -406,7 +370,6 @@ static bool HIDAPI_DriverGameSir_InitDevice(SDL_HIDAPI_Device *device)
         HIDAPI_SetDeviceName(device, "GameSir Controller");
         break;
     }
-    SendGameSirModeSwitch(device);
 
     return HIDAPI_JoystickConnected(device, NULL);
 }
@@ -436,33 +399,17 @@ static bool HIDAPI_DriverGameSir_OpenJoystick(SDL_HIDAPI_Device *device, SDL_Joy
     SDL_zeroa(ctx->last_state);
     ctx->last_state_initialized = false;
 
-    SendGameSirModeSwitch(device);
-
-    if (device->product_id == USB_PRODUCT_GAMESIR_GAMEPAD_G7_PRO_HID) {
-        if (device->is_bluetooth) {
-            joystick->connection_state = SDL_JOYSTICK_CONNECTION_WIRELESS;
-            SDL_LogDebug(SDL_LOG_CATEGORY_INPUT, "GameSir: Joystick opened - Connection type: Bluetooth (wireless, HID mode)");
-        } else {
-            joystick->connection_state = SDL_JOYSTICK_CONNECTION_WIRED;
-            SDL_LogDebug(SDL_LOG_CATEGORY_INPUT, "GameSir: Joystick opened - Connection type: USB/2.4G (HID mode)");
-        }
-    } else if (device->product_id == USB_PRODUCT_GAMESIR_GAMEPAD_G7_PRO_8K_HID) {
-        if (device->is_bluetooth) {
-            joystick->connection_state = SDL_JOYSTICK_CONNECTION_WIRELESS;
-            SDL_LogDebug(SDL_LOG_CATEGORY_INPUT, "GameSir: Joystick opened - Connection type: Bluetooth (wireless, 8K HID mode)");
-        } else {
-            joystick->connection_state = SDL_JOYSTICK_CONNECTION_WIRED;
-            SDL_LogDebug(SDL_LOG_CATEGORY_INPUT, "GameSir: Joystick opened - Connection type: USB/2.4G (8K HID mode)");
-        }
-    } else if (device->is_bluetooth) {
-        joystick->connection_state = SDL_JOYSTICK_CONNECTION_WIRELESS;
-        SDL_LogDebug(SDL_LOG_CATEGORY_INPUT, "GameSir: Joystick opened - Connection type: Bluetooth (wireless)");
-    } else {
-        joystick->connection_state = SDL_JOYSTICK_CONNECTION_WIRED;
-        SDL_LogDebug(SDL_LOG_CATEGORY_INPUT, "GameSir: Joystick opened - Connection type: USB (wired)");
+    bool extended_report_mode = SendGameSirModeSwitch(device);
+    if (!extended_report_mode) {
+        ctx->sensors_supported = false;
+        ctx->led_supported = false;
     }
 
-    joystick->nbuttons = 35;
+    if (extended_report_mode) {
+        joystick->nbuttons = 35;
+    } else {
+        joystick->nbuttons = 11;
+    }
     joystick->naxes = SDL_GAMEPAD_AXIS_COUNT;
     joystick->nhats = 1;
 
@@ -491,13 +438,6 @@ static bool HIDAPI_DriverGameSir_OpenJoystick(SDL_HIDAPI_Device *device, SDL_Joy
 
 static bool HIDAPI_DriverGameSir_RumbleJoystick(SDL_HIDAPI_Device *device, SDL_Joystick *joystick, Uint16 low_frequency_rumble, Uint16 high_frequency_rumble)
 {
-    if (!device) {
-        return false;
-    }
-    SDL_DriverGamesir_Context *ctx = (SDL_DriverGamesir_Context *)device->context;
-    if (!ctx) {
-        return false;
-    }
     Uint8 buf[64];
     SDL_zero(buf);
     buf[0] = 0xA2;
@@ -506,7 +446,6 @@ static bool HIDAPI_DriverGameSir_RumbleJoystick(SDL_HIDAPI_Device *device, SDL_J
     buf[3] = (Uint8)(high_frequency_rumble / 256);
 
     SDL_hid_device *handle = HIDAPI_DriverGameSir_GetOutputHandle(device);
-    SDL_assert(handle != NULL);
     if (handle == NULL) {
         return false;
     }
@@ -515,47 +454,21 @@ static bool HIDAPI_DriverGameSir_RumbleJoystick(SDL_HIDAPI_Device *device, SDL_J
     if (result < 0) {
         return false;
     }
-
     return true;
 }
 
 
 static bool HIDAPI_DriverGameSir_RumbleJoystickTriggers(SDL_HIDAPI_Device *device, SDL_Joystick *joystick, Uint16 left_rumble, Uint16 right_rumble)
 {
-    if (!device) {
-        return false;
-    }
-    SDL_DriverGamesir_Context *ctx = (SDL_DriverGamesir_Context *)device->context;
-    if (!ctx) {
-        return false;
-    }
-    Uint8 buf[64];
-    SDL_zero(buf);
-    buf[0] = 0xA2;
-    buf[1] = 0x03;
-    buf[4] = (Uint8)(left_rumble / 256);
-    buf[5] = (Uint8)(right_rumble / 256);
-
-    SDL_hid_device *handle = HIDAPI_DriverGameSir_GetOutputHandle(device);
-    SDL_assert(handle != NULL);
-    if (handle == NULL) {
-        return false;
-    }
-
-    int result = SDL_hid_write(handle, buf, sizeof(buf));
-    if (result < 0) {
-        return false;
-    }
-
-    return true;
+    return SDL_Unsupported();
 }
 
 
 static Uint32 HIDAPI_DriverGameSir_GetJoystickCapabilities(SDL_HIDAPI_Device *device, SDL_Joystick *joystick)
 {
     SDL_DriverGamesir_Context *ctx = (SDL_DriverGamesir_Context *)device->context;
-    Uint32 caps = SDL_JOYSTICK_CAP_RUMBLE | SDL_JOYSTICK_CAP_TRIGGER_RUMBLE;
-    if (ctx && ctx->led_supported) {
+    Uint32 caps = SDL_JOYSTICK_CAP_RUMBLE;
+    if (ctx->led_supported) {
         caps |= SDL_JOYSTICK_CAP_RGB_LED;
     }
     return caps;
@@ -564,17 +477,12 @@ static Uint32 HIDAPI_DriverGameSir_GetJoystickCapabilities(SDL_HIDAPI_Device *de
 
 static bool HIDAPI_DriverGameSir_SetJoystickLED(SDL_HIDAPI_Device *device, SDL_Joystick *joystick, Uint8 red, Uint8 green, Uint8 blue)
 {
-    if (!device) {
-        return false;
-    }
-
     SDL_DriverGamesir_Context *ctx = (SDL_DriverGamesir_Context *)device->context;
-    if (!ctx) {
-        return false;
-    }
+
     if (!ctx->led_supported) {
         return SDL_Unsupported();
     }
+
     Uint8 buf[64];
     SDL_zero(buf);
     buf[0] = 0xA2;
@@ -585,7 +493,6 @@ static bool HIDAPI_DriverGameSir_SetJoystickLED(SDL_HIDAPI_Device *device, SDL_J
     buf[5] = green;
     buf[6] = blue;
     SDL_hid_device *handle = HIDAPI_DriverGameSir_GetOutputHandle(device);
-    SDL_assert(handle != NULL);
     if (handle == NULL) {
         return false;
     }
@@ -594,7 +501,6 @@ static bool HIDAPI_DriverGameSir_SetJoystickLED(SDL_HIDAPI_Device *device, SDL_J
     if (result < 0) {
         return false;
     }
-
     return true;
 }
 
@@ -606,7 +512,7 @@ static bool HIDAPI_DriverGameSir_SendJoystickEffect(SDL_HIDAPI_Device *device, S
 static bool HIDAPI_DriverGameSir_SetJoystickSensorsEnabled(SDL_HIDAPI_Device *device, SDL_Joystick *joystick, bool enabled)
 {
     SDL_DriverGamesir_Context *ctx = (SDL_DriverGamesir_Context *)device->context;
-    if (ctx && ctx->sensors_supported) {
+    if (ctx->sensors_supported) {
         ctx->sensors_enabled = enabled;
         return true;
     }
@@ -645,11 +551,6 @@ static void HIDAPI_DriverGameSir_HandleStatePacket(SDL_Joystick *joystick, SDL_D
 {
     Sint16 axis;
     Uint64 timestamp = SDL_GetTicksNS();
-
-    if (!joystick || !ctx || !data || size <= 0) {
-        return;
-    }
-
     const Uint8 *last = ctx->last_state;
     bool is_initial_packet = !ctx->last_state_initialized;
 
@@ -904,75 +805,238 @@ static void HIDAPI_DriverGameSir_HandleStatePacket(SDL_Joystick *joystick, SDL_D
     ctx->last_state_initialized = true;
 }
 
+static void HIDAPI_DriverGameSir_HandleSimpleStatePacketBluetooth(SDL_Joystick *joystick, SDL_DriverGamesir_Context *ctx, Uint8 *data, int size)
+{
+    Sint16 axis;
+    Uint64 timestamp = SDL_GetTicksNS();
+    const Uint8 *last = ctx->last_state;
+
+    if (last[5] != data[5]) {
+        Uint8 buttons = data[5];
+        // BTN1: A B C X Y Z L1 R1
+        // Use bitwise operations to check whether each button is pressed
+        // buttons & BTN_A returns the value of BTN_A (if pressed) or 0 (if not pressed)
+        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_SOUTH, buttons & BTN_A);
+        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_EAST, buttons & BTN_B);
+        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_WEST, buttons & BTN_X);
+        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_NORTH, buttons & BTN_Y);
+        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, buttons & BTN_L1);
+        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, buttons & BTN_R1);
+    }
+
+    if (last[6] != data[6]) {
+        Uint8 buttons = data[6];
+        // BTN2: L2 R2 SELECT START HOME L3 R3 CAPTURE
+        // Note: L2/R2 appear as digital buttons in data[6], but their actual analog values are in data[7]/data[8].
+        // Only handle the other buttons here; trigger analog values are processed later in the code.
+        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_BACK, buttons & BTN_SELECT);
+        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_START, buttons & BTN_START);
+        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_GUIDE, buttons & BTN_HOME);
+        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_LEFT_STICK, buttons & BTN_L3);
+        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_RIGHT_STICK, buttons & BTN_R3);
+    }
+
+    if (last[4] != data[4]) {
+        Uint8 hat;
+
+        switch (data[4] & 0xF) {
+        case 0:
+            hat = SDL_HAT_UP;
+            break;
+        case 1:
+            hat = SDL_HAT_RIGHTUP;
+            break;
+        case 2:
+            hat = SDL_HAT_RIGHT;
+            break;
+        case 3:
+            hat = SDL_HAT_RIGHTDOWN;
+            break;
+        case 4:
+            hat = SDL_HAT_DOWN;
+            break;
+        case 5:
+            hat = SDL_HAT_LEFTDOWN;
+            break;
+        case 6:
+            hat = SDL_HAT_LEFT;
+            break;
+        case 7:
+            hat = SDL_HAT_LEFTUP;
+            break;
+        default:
+            hat = SDL_HAT_CENTERED;
+            break;
+        }
+        SDL_SendJoystickHat(timestamp, joystick, 0, hat);
+    }
+
+#define READ_STICK_AXIS(offset) \
+    (data[offset] == 0x80 ? 0 : (Sint16)HIDAPI_RemapVal((float)((int)data[offset] - 0x80), -0x80, 0xff - 0x80, SDL_MIN_SINT16, SDL_MAX_SINT16))
+    {
+        axis = READ_STICK_AXIS(0);
+        SDL_SendJoystickAxis(timestamp, joystick, SDL_GAMEPAD_AXIS_LEFTX, axis);
+        axis = READ_STICK_AXIS(1);
+        SDL_SendJoystickAxis(timestamp, joystick, SDL_GAMEPAD_AXIS_LEFTY, axis);
+        axis = READ_STICK_AXIS(2);
+        SDL_SendJoystickAxis(timestamp, joystick, SDL_GAMEPAD_AXIS_RIGHTX, axis);
+        axis = READ_STICK_AXIS(3);
+        SDL_SendJoystickAxis(timestamp, joystick, SDL_GAMEPAD_AXIS_RIGHTY, axis);
+    }
+#undef READ_STICK_AXIS
+
+#define READ_TRIGGER_AXIS(offset) \
+    (Sint16)HIDAPI_RemapVal((float)data[offset], 0, 0xff, SDL_MIN_SINT16, SDL_MAX_SINT16)
+    axis = READ_TRIGGER_AXIS(8);
+    SDL_SendJoystickAxis(timestamp, joystick, SDL_GAMEPAD_AXIS_LEFT_TRIGGER, axis);
+    axis = READ_TRIGGER_AXIS(7);
+    SDL_SendJoystickAxis(timestamp, joystick, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, axis);
+#undef READ_TRIGGER_AXIS
+
+    SDL_memcpy(ctx->last_state, data, SDL_min(size, sizeof(ctx->last_state)));
+}
+
+static void HIDAPI_DriverGameSir_HandleSimpleStatePacketUSB(SDL_Joystick *joystick, SDL_DriverGamesir_Context *ctx, Uint8 *data, int size)
+{
+    Sint16 axis;
+    Uint64 timestamp = SDL_GetTicksNS();
+    const Uint8 *last = ctx->last_state;
+
+    if (last[0] != data[0]) {
+        Uint8 buttons = data[0];
+        // BTN1: A B C X Y Z L1 R1
+        // Use bitwise operations to check whether each button is pressed
+        // buttons & BTN_A returns the value of BTN_A (if pressed) or 0 (if not pressed)
+        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_SOUTH, buttons & BTN_A);
+        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_EAST, buttons & BTN_B);
+        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_WEST, buttons & BTN_X);
+        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_NORTH, buttons & BTN_Y);
+        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, buttons & BTN_L1);
+        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, buttons & BTN_R1);
+    }
+
+    if (last[1] != data[1]) {
+        Uint8 buttons = data[1];
+        // BTN2: L2 R2 SELECT START HOME L3 R3 CAPTURE
+        // Note: L2/R2 appear as digital buttons in data[6], but their actual analog values are in data[7]/data[8].
+        // Only handle the other buttons here; trigger analog values are processed later in the code.
+        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_BACK, buttons & BTN_SELECT);
+        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_START, buttons & BTN_START);
+        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_GUIDE, buttons & BTN_HOME);
+        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_LEFT_STICK, buttons & BTN_L3);
+        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_RIGHT_STICK, buttons & BTN_R3);
+    }
+
+    if (last[2] != data[2]) {
+        Uint8 hat;
+
+        switch (data[2] & 0xF) {
+        case 0:
+            hat = SDL_HAT_UP;
+            break;
+        case 1:
+            hat = SDL_HAT_RIGHTUP;
+            break;
+        case 2:
+            hat = SDL_HAT_RIGHT;
+            break;
+        case 3:
+            hat = SDL_HAT_RIGHTDOWN;
+            break;
+        case 4:
+            hat = SDL_HAT_DOWN;
+            break;
+        case 5:
+            hat = SDL_HAT_LEFTDOWN;
+            break;
+        case 6:
+            hat = SDL_HAT_LEFT;
+            break;
+        case 7:
+            hat = SDL_HAT_LEFTUP;
+            break;
+        default:
+            hat = SDL_HAT_CENTERED;
+            break;
+        }
+        SDL_SendJoystickHat(timestamp, joystick, 0, hat);
+    }
+
+#define READ_STICK_AXIS(offset) \
+    (data[offset] == 0x80 ? 0 : (Sint16)HIDAPI_RemapVal((float)((int)data[offset] - 0x80), -0x80, 0xff - 0x80, SDL_MIN_SINT16, SDL_MAX_SINT16))
+    {
+        axis = READ_STICK_AXIS(3);
+        SDL_SendJoystickAxis(timestamp, joystick, SDL_GAMEPAD_AXIS_LEFTX, axis);
+        axis = READ_STICK_AXIS(4);
+        SDL_SendJoystickAxis(timestamp, joystick, SDL_GAMEPAD_AXIS_LEFTY, axis);
+        axis = READ_STICK_AXIS(5);
+        SDL_SendJoystickAxis(timestamp, joystick, SDL_GAMEPAD_AXIS_RIGHTX, axis);
+        axis = READ_STICK_AXIS(6);
+        SDL_SendJoystickAxis(timestamp, joystick, SDL_GAMEPAD_AXIS_RIGHTY, axis);
+    }
+#undef READ_STICK_AXIS
+
+#define READ_TRIGGER_AXIS(offset) \
+    (Sint16)HIDAPI_RemapVal((float)data[offset], 0, 0xff, SDL_MIN_SINT16, SDL_MAX_SINT16)
+    axis = READ_TRIGGER_AXIS(7);
+    SDL_SendJoystickAxis(timestamp, joystick, SDL_GAMEPAD_AXIS_LEFT_TRIGGER, axis);
+    axis = READ_TRIGGER_AXIS(8);
+    SDL_SendJoystickAxis(timestamp, joystick, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, axis);
+#undef READ_TRIGGER_AXIS
+
+    SDL_memcpy(ctx->last_state, data, SDL_min(size, sizeof(ctx->last_state)));
+}
 
 static bool HIDAPI_DriverGameSir_UpdateDevice(SDL_HIDAPI_Device *device)
 {
-    if (!device) {
-        return false;
-    }
-
     SDL_DriverGamesir_Context *ctx = (SDL_DriverGamesir_Context *)device->context;
-    if (!ctx) {
-        return false;
-    }
-
     SDL_Joystick *joystick = NULL;
     Uint8 data[USB_PACKET_LENGTH];
     int size;
 
     if (device->num_joysticks > 0) {
         joystick = SDL_GetJoystickFromID(device->joysticks[0]);
-        if (!joystick) {
-            return false;
-        }
     }
 
     SDL_hid_device *handle = HIDAPI_DriverGameSir_GetInputHandle(device, ctx);
-    SDL_assert(handle != NULL);
     if (handle == NULL) {
         return false;
     }
 
     while ((size = SDL_hid_read_timeout(handle, data, sizeof(data), 0)) > 0) {
-        if (joystick) {
-            Uint8 *payload = NULL;
-            int payload_size = 0;
+#ifdef DEBUG_GAMESIR_PROTOCOL
+        HIDAPI_DumpPacket("GameSir packet: size = %d", data, size);
+#endif
+        if (!joystick) {
+            continue;
+        }
 
-            // Check packet format: it may include a report ID (0x43) as the first byte
-            // Actual packet format: 43 a1 c8 [button data...]
-            // If the first byte is 0x43, the second is 0xA1 and the third is 0xC8, skip the report ID
-            if (size >= 3 && data[0] == 0x43 && data[1] == GAMESIR_PACKET_HEADER_0 && data[2] == GAMESIR_PACKET_HEADER_1_GAMEPAD) {
-                payload = data + 3;
-                payload_size = size - 3;
-            } else if (size >= 2 && data[0] == GAMESIR_PACKET_HEADER_0 && data[1] == GAMESIR_PACKET_HEADER_1_GAMEPAD) {
-                payload = data + 2;
-                payload_size = size - 2;
-            }
-
-            if (payload) {
-                HIDAPI_DriverGameSir_HandleStatePacket(joystick, ctx, payload, payload_size);
-            }
+        // Check packet format: it may include a report ID (0x43) as the first byte
+        // Actual packet format: 43 a1 c8 [button data...]
+        // If the first byte is 0x43, the second is 0xA1 and the third is 0xC8, skip the report ID
+        Uint8 *payload = NULL;
+        int payload_size = 0;
+        if (size >= 3 && data[0] == 0x43 && data[1] == GAMESIR_PACKET_HEADER_0 && data[2] == GAMESIR_PACKET_HEADER_1_GAMEPAD) {
+            payload = data + 3;
+            payload_size = size - 3;
+            HIDAPI_DriverGameSir_HandleStatePacket(joystick, ctx, payload, payload_size);
+        } else if (size >= 2 && data[0] == GAMESIR_PACKET_HEADER_0 && data[1] == GAMESIR_PACKET_HEADER_1_GAMEPAD) {
+            payload = data + 2;
+            payload_size = size - 2;
+            HIDAPI_DriverGameSir_HandleStatePacket(joystick, ctx, payload, payload_size);
+        } else if (size >= 10 && data[0] == 0x07) {
+            payload = data + 1;
+            payload_size = size - 1;
+            HIDAPI_DriverGameSir_HandleSimpleStatePacketBluetooth(joystick, ctx, payload, payload_size);
+        } else if (size == 9) {
+            payload = data;
+            payload_size = size;
+            HIDAPI_DriverGameSir_HandleSimpleStatePacketUSB(joystick, ctx, payload, payload_size);
         }
     }
 
-    if (size < 0) {
-        if (device->product_id == USB_PRODUCT_GAMESIR_GAMEPAD_G7_PRO_HID) {
-            if (device->is_bluetooth) {
-                SDL_LogDebug(SDL_LOG_CATEGORY_INPUT, "GameSir: Device disconnected - Connection type was: Bluetooth (wireless, HID mode)");
-            } else {
-                SDL_LogDebug(SDL_LOG_CATEGORY_INPUT, "GameSir: Device disconnected - Connection type was: USB/2.4G (HID mode)");
-            }
-        } else if (device->product_id == USB_PRODUCT_GAMESIR_GAMEPAD_G7_PRO_8K_HID) {
-            if (device->is_bluetooth) {
-                SDL_LogDebug(SDL_LOG_CATEGORY_INPUT, "GameSir: Device disconnected - Connection type was: Bluetooth (wireless, 8K HID mode)");
-            } else {
-                SDL_LogDebug(SDL_LOG_CATEGORY_INPUT, "GameSir: Device disconnected - Connection type was: USB/2.4G (8K HID mode)");
-            }
-        } else if (device->is_bluetooth) {
-            SDL_LogDebug(SDL_LOG_CATEGORY_INPUT, "GameSir: Device disconnected - Connection type was: Bluetooth (wireless)");
-        } else {
-            SDL_LogDebug(SDL_LOG_CATEGORY_INPUT, "GameSir: Device disconnected - Connection type was: USB (wired)");
-        }
+    if (size < 0 && device->num_joysticks > 0) {
+        // Read error, device is disconnected
         HIDAPI_JoystickDisconnected(device, device->joysticks[0]);
     }
     return (size >= 0);
@@ -1017,6 +1081,6 @@ SDL_HIDAPI_DeviceDriver SDL_HIDAPI_DriverGameSir = {
     HIDAPI_DriverGameSir_FreeDevice,
 };
 
-#endif
+#endif // SDL_JOYSTICK_HIDAPI_GAMESIR
 
-#endif
+#endif // SDL_JOYSTICK_HIDAPI
