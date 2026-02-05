@@ -28,6 +28,7 @@
 #ifdef SDL_VIDEO_DRIVER_ANDROID
 #include <android/native_window.h>
 #include "../video/android/SDL_androidvideo.h"
+#include "../core/android/SDL_android.h"
 #endif
 #ifdef SDL_VIDEO_DRIVER_RPI
 #include <unistd.h>
@@ -1340,8 +1341,16 @@ EGLSurface SDL_EGL_CreateSurface(SDL_VideoDevice *_this, SDL_Window *window, Nat
                                         _this->egl_data->egl_config,
                                         EGL_NATIVE_VISUAL_ID, &format_wanted);
 
-    // Format based on selected egl config.
-    ANativeWindow_setBuffersGeometry(nw, 0, 0, format_wanted);
+   	/* Adjust the resolution based on the configured draw scale */
+    float scale = Android_GetDrawScale();
+
+    if (Android_ShouldUseDrawScale(scale)) {
+        /* Format based on selected egl config. */
+        ANativeWindow_setBuffersGeometry(nw, (int)(ANativeWindow_getWidth(nw) * scale), (int)(ANativeWindow_getHeight(nw) * scale), format_wanted);
+    } else {
+        /* Format based on selected egl config. */
+        ANativeWindow_setBuffersGeometry(nw, 0, 0, format_wanted);
+    }
 #endif
 
     if (_this->gl_config.framebuffer_srgb_capable >= 0) {

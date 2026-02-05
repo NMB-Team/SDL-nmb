@@ -387,6 +387,7 @@ static jmethodID midSetRelativeMouseEnabled;
 static jmethodID midSetSystemCursor;
 static jmethodID midSetWindowStyle;
 static jmethodID midShouldMinimizeOnFocusLoss;
+static jmethodID midIsInMultiWindowMode;
 static jmethodID midShowTextInput;
 static jmethodID midSupportsRelativeMouse;
 static jmethodID midOpenFileDescriptor;
@@ -677,7 +678,8 @@ JNIEXPORT void JNICALL SDL_JAVA_INTERFACE(nativeSetupJNI)(JNIEnv *env, jclass cl
     midSetSystemCursor = (*env)->GetStaticMethodID(env, mActivityClass, "setSystemCursor", "(I)Z");
     midSetWindowStyle = (*env)->GetStaticMethodID(env, mActivityClass, "setWindowStyle", "(Z)V");
     midShouldMinimizeOnFocusLoss = (*env)->GetStaticMethodID(env, mActivityClass, "shouldMinimizeOnFocusLoss", "()Z");
-    midShowTextInput = (*env)->GetStaticMethodID(env, mActivityClass, "showTextInput", "(IIIII)Z");
+    midIsInMultiWindowMode = (*env)->GetStaticMethodID(env, mActivityClass, "isInMultiWindowModeJNI", "()Z");
+	midShowTextInput = (*env)->GetStaticMethodID(env, mActivityClass, "showTextInput", "(IIIII)Z");
     midSupportsRelativeMouse = (*env)->GetStaticMethodID(env, mActivityClass, "supportsRelativeMouse", "()Z");
     midOpenFileDescriptor = (*env)->GetStaticMethodID(env, mActivityClass, "openFileDescriptor", "(Ljava/lang/String;Ljava/lang/String;)I");
     midShowFileDialog = (*env)->GetStaticMethodID(env, mActivityClass, "showFileDialog", "([Ljava/lang/String;ZZI)Z");
@@ -709,6 +711,7 @@ JNIEXPORT void JNICALL SDL_JAVA_INTERFACE(nativeSetupJNI)(JNIEnv *env, jclass cl
         !midSetSystemCursor ||
         !midSetWindowStyle ||
         !midShouldMinimizeOnFocusLoss ||
+		!midIsInMultiWindowMode ||
         !midShowTextInput ||
         !midSupportsRelativeMouse ||
         !midOpenFileDescriptor ||
@@ -1732,6 +1735,12 @@ void Android_JNI_MinimizeWindow(void)
 {
     JNIEnv *env = Android_JNI_GetEnv();
     (*env)->CallStaticVoidMethod(env, mActivityClass, midMinimizeWindow);
+}
+
+bool Android_IsInMultiWindowMode(void)
+{
+    JNIEnv *env = Android_JNI_GetEnv();
+    return (*env)->CallStaticBooleanMethod(env, mActivityClass, midIsInMultiWindowMode);
 }
 
 bool Android_JNI_ShouldMinimizeOnFocusLoss(void)

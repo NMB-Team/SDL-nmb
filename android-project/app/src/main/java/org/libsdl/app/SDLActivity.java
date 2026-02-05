@@ -1255,6 +1255,17 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     /**
      * This method is called by SDL using JNI.
      */
+	public static boolean isInMultiWindowModeJNI() {
+        if (mSingleton == null || !mHasMultiWindow) {
+            return false;
+        }
+
+        return mSingleton.isInMultiWindowMode();
+    }
+
+    /**
+     * This method is called by SDL using JNI.
+     */
     public static Activity getContext() {
         return SDL.getContext();
     }
@@ -1963,7 +1974,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
             Intent i = new Intent(Intent.ACTION_VIEW);
             i.setData(Uri.parse(url));
 
-            int flags = Intent.FLAG_ACTIVITY_NO_HISTORY 
+            int flags = Intent.FLAG_ACTIVITY_NO_HISTORY
                       | Intent.FLAG_ACTIVITY_MULTIPLE_TASK
                       | Intent.FLAG_ACTIVITY_NEW_DOCUMENT;
             i.addFlags(flags);
@@ -2227,4 +2238,3 @@ class SDLClipboardHandler implements
         SDLActivity.onNativeClipboardChanged();
     }
 }
-

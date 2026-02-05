@@ -63,6 +63,7 @@ extern void Android_JNI_SetWindowStyle(bool fullscreen);
 extern void Android_JNI_SetOrientation(int w, int h, int resizable, const char *hint);
 extern void Android_JNI_MinimizeWindow(void);
 extern bool Android_JNI_ShouldMinimizeOnFocusLoss(void);
+extern bool Android_IsInMultiWindowMode(void);
 
 extern bool Android_JNI_GetAccelerometerValues(float values[3]);
 extern void Android_JNI_ShowScreenKeyboard(int input_type, SDL_Rect *inputRect);

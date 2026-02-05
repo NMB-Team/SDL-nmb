@@ -199,6 +199,20 @@ void Android_VideoQuit(SDL_VideoDevice *_this)
     Android_QuitTouch();
 }
 
+float Android_GetDrawScale(void)
+{
+    const char *scale_hint = SDL_GetHint("SDL_ANDROID_DRAW_SCALE");
+
+    float scale = scale_hint && !(Android_IsInMultiWindowMode() || SDL_IsDeXMode() || SDL_IsChromebook()) ? (float)atof(scale_hint) : 1.0;
+
+    return scale < 0.5 ? 0.5 : scale > 1.0 ? 1.0 : scale;
+}
+
+bool Android_ShouldUseDrawScale(float scale)
+{
+    return scale >= 0.5 && scale < 1.0 && !(Android_IsInMultiWindowMode() || SDL_IsDeXMode() || SDL_IsChromebook());
+}
+
 void Android_SetScreenResolution(int surfaceWidth, int surfaceHeight, int deviceWidth, int deviceHeight, float density, float rate)
 {
     Android_SurfaceWidth = surfaceWidth;
@@ -296,7 +310,21 @@ void Android_SendResize(SDL_Window *window)
     }
 
     if (window) {
-        SDL_SendWindowEvent(window, SDL_EVENT_WINDOW_RESIZED, Android_SurfaceWidth, Android_SurfaceHeight);
+		float scale = Android_GetDrawScale();
+        SDL_WindowData *data = (SDL_WindowData *)window->driverdata;
+        ANativeWindow* nw = (ANativeWindow*)data->native_window;
+        int32_t format_wanted = ANativeWindow_getFormat(nw);
+
+        if (Android_ShouldUseDrawScale(scale))
+        {
+            ANativeWindow_setBuffersGeometry(nw, (int)(Android_SurfaceWidth * scale), (int)(Android_SurfaceHeight * scale), format_wanted);
+            SDL_SendWindowEvent(window, SDL_EVENT_WINDOW_RESIZED, (int)(Android_SurfaceWidth * scale), (int)(Android_SurfaceHeight * scale));
+        }
+        else
+        {
+            ANativeWindow_setBuffersGeometry(nw, 0, 0, format_wanted);
+            SDL_SendWindowEvent(window, SDL_EVENT_WINDOW_RESIZED, Android_SurfaceWidth, Android_SurfaceHeight);
+        }
     }
 }
 
