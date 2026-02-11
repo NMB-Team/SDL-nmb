@@ -35,6 +35,7 @@
 
 #define GAMESIR_PACKET_HEADER_0 0xA1
 #define GAMESIR_PACKET_HEADER_1_GAMEPAD 0xC8
+#define GAMESIR_IMU_RATE_HZ 1000
 
 #define BTN_A        0x01
 #define BTN_B        0x02
@@ -110,9 +111,7 @@ static void HIDAPI_DriverGameSir_UnregisterHints(SDL_HintCallback callback, void
 
 static bool HIDAPI_DriverGameSir_IsEnabled(void)
 {
-    // Temporarily disabled by default until response from GameSir
-    //return SDL_GetHintBoolean(SDL_HINT_JOYSTICK_HIDAPI_GAMESIR, SDL_GetHintBoolean(SDL_HINT_JOYSTICK_HIDAPI, SDL_HIDAPI_DEFAULT));
-    return SDL_GetHintBoolean(SDL_HINT_JOYSTICK_HIDAPI_GAMESIR, false);
+    return SDL_GetHintBoolean(SDL_HINT_JOYSTICK_HIDAPI_GAMESIR, SDL_GetHintBoolean(SDL_HINT_JOYSTICK_HIDAPI, SDL_HIDAPI_DEFAULT));
 }
 
 
@@ -161,25 +160,10 @@ static bool SendGameSirModeSwitch(SDL_HIDAPI_Device *device)
 
     for (int attempt = 0; attempt < 3; ++attempt) {
         int result = SDL_hid_write(handle, buf, sizeof(buf));
-        if (result < 0) {
-            return false;
+        if (result >= 0) {
+            return true;
         }
-        for (int i = 0; i < 10; ++i) {
-            SDL_Delay(1);
-
-            Uint8 data[USB_PACKET_LENGTH] = {0};
-            int size = SDL_hid_read_timeout(handle, data, sizeof(data), 0);
-            if (size < 0) {
-                break;
-            }
-            if (size == 0) {
-                continue;
-            }
-
-            if (size == 64 && data[0] == 0xA1 && data[1] == 0x43 && data[2] == 0x01) {
-                return true;
-            }
-        }
+        SDL_Delay(1);
     }
     return false;
 }
@@ -352,19 +336,14 @@ static bool HIDAPI_DriverGameSir_InitDevice(SDL_HIDAPI_Device *device)
 
     ctx->led_supported = true;
     ctx->output_handle = GetOutputHandle(device);
+    ctx->sensor_timestamp_step_ns = SDL_NS_PER_SECOND / GAMESIR_IMU_RATE_HZ;
 
     switch (device->product_id) {
-    case USB_PRODUCT_GAMESIR_GAMEPAD_G7_PRO_HID:
-        HIDAPI_SetDeviceName(device, "GameSir-G7 Pro (HID)");
+    case USB_PRODUCT_GAMESIR_GAMEPAD_G7_PRO_8K:
+        HIDAPI_SetDeviceName(device, "GameSir-G7 Pro 8K");
         ctx->sensors_supported = true;
         ctx->led_supported = false;
-        SDL_LogDebug(SDL_LOG_CATEGORY_INPUT, "GameSir: Device detected - G7 Pro HID mode (PID 0x%04X)", device->product_id);
-        break;
-    case USB_PRODUCT_GAMESIR_GAMEPAD_G7_PRO_8K_HID:
-        HIDAPI_SetDeviceName(device, "GameSir-G7 Pro 8K (HID)");
-        ctx->sensors_supported = true;
-        ctx->led_supported = false;
-        SDL_LogDebug(SDL_LOG_CATEGORY_INPUT, "GameSir: Device detected - G7 Pro 8K HID mode (PID 0x%04X)", device->product_id);
+        SDL_LogDebug(SDL_LOG_CATEGORY_INPUT, "GameSir: Device detected - G7 Pro 8K mode (PID 0x%04X)", device->product_id);
         break;
     default:
         HIDAPI_SetDeviceName(device, "GameSir Controller");
@@ -399,22 +378,18 @@ static bool HIDAPI_DriverGameSir_OpenJoystick(SDL_HIDAPI_Device *device, SDL_Joy
     SDL_zeroa(ctx->last_state);
     ctx->last_state_initialized = false;
 
-    bool extended_report_mode = SendGameSirModeSwitch(device);
-    if (!extended_report_mode) {
-        ctx->sensors_supported = false;
-        ctx->led_supported = false;
+    if (!SendGameSirModeSwitch(device)) {
+        SDL_LogDebug(SDL_LOG_CATEGORY_INPUT, "GameSir: failed to send SDL mode switch command (0xA2, 0x01)");
     }
 
-    if (extended_report_mode) {
-        joystick->nbuttons = 35;
-    } else {
-        joystick->nbuttons = 11;
-    }
+    joystick->nbuttons = 35;
     joystick->naxes = SDL_GAMEPAD_AXIS_COUNT;
     joystick->nhats = 1;
 
     if (ctx->sensors_supported) {
-        ctx->sensor_timestamp_step_ns = SDL_NS_PER_SECOND / 125;
+        // GameSir SDL protocol packets currently don't expose an IMU timestamp.
+        // Use a synthetic monotonic timestamp at the firmware's fixed IMU rate.
+        ctx->sensor_timestamp_ns = SDL_GetTicksNS();
         // Accelerometer scale factor: assume a range of ±2g, 16-bit signed values (-32768 to 32767)
         // 32768 corresponds to 2g, so the scale factor = 2 * SDL_STANDARD_GRAVITY / 32768.0f
         ctx->accelScale = 2.0f * SDL_STANDARD_GRAVITY / 32768.0f;
@@ -427,7 +402,7 @@ static bool HIDAPI_DriverGameSir_OpenJoystick(SDL_HIDAPI_Device *device, SDL_Joy
         const float gyro_denominator = 16.0f;
         ctx->gyroScale = (gyro_numerator / gyro_denominator) * (SDL_PI_F / 180.0f);
 
-        const float flSensorRate = 1000.0f;
+        const float flSensorRate = (float)GAMESIR_IMU_RATE_HZ;
         SDL_PrivateJoystickAddSensor(joystick, SDL_SENSOR_GYRO, flSensorRate);
         SDL_PrivateJoystickAddSensor(joystick, SDL_SENSOR_ACCEL, flSensorRate);
     }
@@ -442,8 +417,8 @@ static bool HIDAPI_DriverGameSir_RumbleJoystick(SDL_HIDAPI_Device *device, SDL_J
     SDL_zero(buf);
     buf[0] = 0xA2;
     buf[1] = 0x03;
-    buf[2] = (Uint8)(low_frequency_rumble / 256);
-    buf[3] = (Uint8)(high_frequency_rumble / 256);
+    buf[2] = (Uint8)(low_frequency_rumble >> 8);
+    buf[3] = (Uint8)(high_frequency_rumble >> 8);
 
     SDL_hid_device *handle = HIDAPI_DriverGameSir_GetOutputHandle(device);
     if (handle == NULL) {
@@ -514,6 +489,9 @@ static bool HIDAPI_DriverGameSir_SetJoystickSensorsEnabled(SDL_HIDAPI_Device *de
     SDL_DriverGamesir_Context *ctx = (SDL_DriverGamesir_Context *)device->context;
     if (ctx->sensors_supported) {
         ctx->sensors_enabled = enabled;
+        if (enabled) {
+            ctx->sensor_timestamp_ns = SDL_GetTicksNS();
+        }
         return true;
     }
     return SDL_Unsupported();
@@ -652,8 +630,9 @@ static void HIDAPI_DriverGameSir_HandleStatePacket(SDL_Joystick *joystick, SDL_D
 
             Sint16 left_x, left_y;
             // Use signed 16-bit values directly; invert Y-axis (SDL convention: up is negative)
+            // Clamp -(-32768) to 32767 to avoid Sint16 overflow wrapping back to -32768
             left_x = raw_x;
-            left_y = -raw_y;
+            left_y = (raw_y == SDL_MIN_SINT16) ? SDL_MAX_SINT16 : -raw_y;
 
             Uint16 last_raw_x_unsigned = ((Uint16)last[4] << 8) | last[5];
             Uint16 last_raw_y_unsigned = ((Uint16)last[6] << 8) | last[7];
@@ -667,7 +646,7 @@ static void HIDAPI_DriverGameSir_HandleStatePacket(SDL_Joystick *joystick, SDL_D
 
                 Sint16 last_left_x, last_left_y;
                 last_left_x = last_raw_x;
-                last_left_y = -last_raw_y;  // invert Y axis
+                last_left_y = (last_raw_y == SDL_MIN_SINT16) ? SDL_MAX_SINT16 : -last_raw_y;  // invert Y axis, clamp overflow
 
                 Sint16 last_deadzone_x, last_deadzone_y;
                 ApplyCircularDeadzone(last_left_x, last_left_y, &last_deadzone_x, &last_deadzone_y);
@@ -695,8 +674,9 @@ static void HIDAPI_DriverGameSir_HandleStatePacket(SDL_Joystick *joystick, SDL_D
 
             Sint16 right_x, right_y;
             // Use signed 16-bit values directly; invert Y-axis (SDL convention: up is negative)
+            // Clamp -(-32768) to 32767 to avoid Sint16 overflow wrapping back to -32768
             right_x = raw_x;
-            right_y = -raw_y;
+            right_y = (raw_y == SDL_MIN_SINT16) ? SDL_MAX_SINT16 : -raw_y;
 
             Uint16 last_raw_x_unsigned = ((Uint16)last[8] << 8) | last[9];
             Uint16 last_raw_y_unsigned = ((Uint16)last[10] << 8) | last[11];
@@ -710,7 +690,7 @@ static void HIDAPI_DriverGameSir_HandleStatePacket(SDL_Joystick *joystick, SDL_D
 
                 Sint16 last_right_x, last_right_y;
                 last_right_x = last_raw_x;
-                last_right_y = -last_raw_y;  // invert Y axis
+                last_right_y = (last_raw_y == SDL_MIN_SINT16) ? SDL_MAX_SINT16 : -last_raw_y;  // invert Y axis, clamp overflow
 
                 Sint16 last_deadzone_x, last_deadzone_y;
                 ApplyCircularDeadzone(last_right_x, last_right_y, &last_deadzone_x, &last_deadzone_y);
@@ -723,17 +703,17 @@ static void HIDAPI_DriverGameSir_HandleStatePacket(SDL_Joystick *joystick, SDL_D
         }
 
         // Handle trigger axes
-        // Protocol: L2 (payload byte 12) - analog left trigger 0-255, 0 = released, 255 = pressed
-        //           R2 (payload byte 13) - analog right trigger 0-255, 0 = released, 255 = pressed
-        // SDL range: 0-32767 (0 = released, 32767 = fully pressed)
-        // Linear mapping: 0-255 -> 0-32767
+        // Protocol: L2 (payload byte 12) - analog left trigger 0-255, 0 = released, 255 = fully pressed
+        //           R2 (payload byte 13) - analog right trigger 0-255, 0 = released, 255 = fully pressed
+        // SDL range: -32768 to 32767 (-32768 = released, 32767 = fully pressed)
+        // Linear mapping: 0-255 -> -32768..32767, formula: data * 257 - 32768 (same as PS4)
         if (last[12] != data[12]) {
-            axis = (Sint16)(((int)data[12] * 255) - 32767);
+            axis = ((int)data[12] * 257) - 32768;
             SDL_SendJoystickAxis(timestamp, joystick, SDL_GAMEPAD_AXIS_LEFT_TRIGGER, axis);
         }
 
         if (last[13] != data[13]) {
-            axis = (Sint16)(((int)data[13] * 255) - 32767);
+            axis = ((int)data[13] * 257) - 32768;
             SDL_SendJoystickAxis(timestamp, joystick, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, axis);
         }
     }
