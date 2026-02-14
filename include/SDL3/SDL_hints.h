@@ -1231,6 +1231,8 @@ extern "C" {
  * - "2": The indicator bar is dim and the first swipe makes it visible and
  *   the second swipe performs the "home" action. (default for fullscreen
  *   applications)
+ * - "3": The indicator bar is dim and only the bottom edge defers system
+ *   gestures, allowing other screen edges to respond normally.
  *
  * This hint can be set anytime.
  *

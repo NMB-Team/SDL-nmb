@@ -238,7 +238,9 @@ static void SDLCALL SDL_HideHomeIndicatorHintChanged(void *userdata, const char 
 - (UIRectEdge)preferredScreenEdgesDeferringSystemGestures
 {
     if (self.homeIndicatorHidden >= 0) {
-        if (self.homeIndicatorHidden == 2) {
+        if (self.homeIndicatorHidden == 3) {
+            return UIRectEdgeBottom;
+        } else if (self.homeIndicatorHidden == 2) {
             return UIRectEdgeAll;
         } else {
             return UIRectEdgeNone;

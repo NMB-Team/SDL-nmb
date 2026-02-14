@@ -122,7 +122,7 @@ bool Cocoa_GLES_SetupWindow(SDL_VideoDevice *_this, SDL_Window *window)
         SDL_CocoaWindowData *windowdata = (__bridge SDL_CocoaWindowData *)window->internal;
         SDL_Window *current_win = SDL_GL_GetCurrentWindow();
         SDL_GLContext current_ctx = SDL_GL_GetCurrentContext();
-		SDL_MetalView metalview;
+        SDL_MetalView metalview;
 
         if (_this->egl_data == NULL) {
 // !!! FIXME: commenting out this assertion is (I think) incorrect; figure out why driver_loaded is wrong for ANGLE instead. --ryan.
@@ -136,7 +136,7 @@ bool Cocoa_GLES_SetupWindow(SDL_VideoDevice *_this, SDL_Window *window)
             _this->gl_config.driver_loaded = 1;
         }
 
- /* Create the Metal view for window */
+        /* Create the Metal view for window */
         metalview = Cocoa_Metal_CreateView(_this, window);
         if (metalview == NULL) {
             return SDL_SetError("Could not create Metal view for window");
@@ -157,17 +157,23 @@ bool Cocoa_GLES_SetupWindow(SDL_VideoDevice *_this, SDL_Window *window)
 
             /* Mark the layer as opaque to avoid unnecessary compositor blending */
             layer.opaque = YES;
+
+            /* Disable VSync by default to prevent frame drops on high refresh displays. */
+            layer.displaySyncEnabled = NO;
+
+            /* Reduce buffering for lower latency (default is 3) */
+            layer.maximumDrawableCount = 2;
         }
 
         /* Create the GLES window surface */
         windowdata.egl_surface = SDL_EGL_CreateSurface(_this, window, (__bridge NativeWindowType)layer);
 
         if (windowdata.egl_surface == EGL_NO_SURFACE) {
-			Cocoa_Metal_DestroyView(_this, metalview);
+            Cocoa_Metal_DestroyView(_this, metalview);
             return SDL_SetError("Could not create GLES window surface");
         }
 
-		/* Right now the metal view's ref count is +2 (one from returning a new view object in CreateView, and one because it's a subview of the window.)
+        /* Right now the metal view's ref count is +2 (one from returning a new view object in CreateView, and one because it's a subview of the window.)
          * If we release the view here to make it +1, it will be destroyed when the window is destroyed. */
         CFBridgingRelease(metalview);
 
