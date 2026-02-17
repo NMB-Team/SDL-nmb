@@ -2483,7 +2483,9 @@ bool Cocoa_CreateWindow(SDL_VideoDevice *_this, SDL_Window *window, SDL_Properti
                 return SDL_SetError("%s", [[e reason] UTF8String]);
             }
 
-            [nswindow setColorSpace:[NSColorSpace sRGBColorSpace]];
+            // https://github.com/libsdl-org/SDL/commit/d2300516c3998277c993fd4ac336fbb4ba71641a
+            // Undoing this commit since the colors tend to look less saturated than what was previouly on SDL2
+            // [nswindow setColorSpace:[NSColorSpace sRGBColorSpace]];
 
             [nswindow setTabbingMode:NSWindowTabbingModeDisallowed];
 
