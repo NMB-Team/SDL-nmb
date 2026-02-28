@@ -35,7 +35,7 @@
 
 #define GAMESIR_PACKET_HEADER_0 0xA1
 #define GAMESIR_PACKET_HEADER_1_GAMEPAD 0xC8
-#define GAMESIR_IMU_RATE_HZ 1000
+#define GAMESIR_IMU_RATE_HZ 250
 
 #define BTN_A        0x01
 #define BTN_B        0x02
@@ -77,6 +77,24 @@
 #define BTN_R7       0x20
 #define BTN_L8       0x40
 #define BTN_R8       0x80
+
+enum
+{
+    SDL_GAMEPAD_BUTTON_GAMESIR_SHARE = 11,
+    SDL_GAMEPAD_BUTTON_GAMESIR_L4,
+    SDL_GAMEPAD_BUTTON_GAMESIR_R4,
+    SDL_GAMEPAD_BUTTON_GAMESIR_L5,
+    SDL_GAMEPAD_BUTTON_GAMESIR_R5,
+    //SDL_GAMEPAD_BUTTON_GAMESIR_L6,    // This button doesn't exist?
+    //SDL_GAMEPAD_BUTTON_GAMESIR_R6,    // This button doesn't exist?
+    //SDL_GAMEPAD_BUTTON_GAMESIR_L7,    // This button doesn't exist?
+    //SDL_GAMEPAD_BUTTON_GAMESIR_R7,    // This button doesn't exist?
+    //SDL_GAMEPAD_BUTTON_GAMESIR_L8,    // This button doesn't exist?
+    //SDL_GAMEPAD_BUTTON_GAMESIR_R8,    // This button doesn't exist?
+    SDL_GAMEPAD_BUTTON_GAMESIR_MUTE,    // This button controls the audio mute LED
+    //SDL_GAMEPAD_BUTTON_GAMESIR_M      // This button is for internal use by the firmware
+    SDL_GAMEPAD_NUM_GAMESIR_BUTTONS
+};
 
 typedef struct {
     Uint8 cmd;
@@ -341,7 +359,11 @@ static bool HIDAPI_DriverGameSir_InitDevice(SDL_HIDAPI_Device *device)
     switch (device->product_id) {
     case USB_PRODUCT_GAMESIR_GAMEPAD_G7_PRO_8K:
         HIDAPI_SetDeviceName(device, "GameSir-G7 Pro 8K");
-        ctx->sensors_supported = true;
+        if (device->is_bluetooth) {
+            // Sensors are not supported over Bluetooth
+        } else {
+            ctx->sensors_supported = true;
+        }
         ctx->led_supported = false;
         SDL_LogDebug(SDL_LOG_CATEGORY_INPUT, "GameSir: Device detected - G7 Pro 8K mode (PID 0x%04X)", device->product_id);
         break;
@@ -382,7 +404,12 @@ static bool HIDAPI_DriverGameSir_OpenJoystick(SDL_HIDAPI_Device *device, SDL_Joy
         SDL_LogDebug(SDL_LOG_CATEGORY_INPUT, "GameSir: failed to send SDL mode switch command (0xA2, 0x01)");
     }
 
-    joystick->nbuttons = 35;
+    if (device->is_bluetooth) {
+        // Extended buttons are not supported over Bluetooth
+        joystick->nbuttons = 11;
+    } else {
+        joystick->nbuttons = SDL_GAMEPAD_NUM_GAMESIR_BUTTONS;
+    }
     joystick->naxes = SDL_GAMEPAD_AXIS_COUNT;
     joystick->nhats = 1;
 
@@ -390,9 +417,9 @@ static bool HIDAPI_DriverGameSir_OpenJoystick(SDL_HIDAPI_Device *device, SDL_Joy
         // GameSir SDL protocol packets currently don't expose an IMU timestamp.
         // Use a synthetic monotonic timestamp at the firmware's fixed IMU rate.
         ctx->sensor_timestamp_ns = SDL_GetTicksNS();
-        // Accelerometer scale factor: assume a range of ±2g, 16-bit signed values (-32768 to 32767)
-        // 32768 corresponds to 2g, so the scale factor = 2 * SDL_STANDARD_GRAVITY / 32768.0f
-        ctx->accelScale = 2.0f * SDL_STANDARD_GRAVITY / 32768.0f;
+        // Accelerometer scale factor: assume a range of ±4g, 16-bit signed values (-32768 to 32767)
+        // 32768 corresponds to 4g, so the scale factor = 4 * SDL_STANDARD_GRAVITY / 32768.0f
+        ctx->accelScale = 4.0f * SDL_STANDARD_GRAVITY / 32768.0f;
 
         // Gyro scale factor: based on the PS4 implementation
         // PS4 uses (gyro_numerator / gyro_denominator) * (π / 180)
@@ -560,7 +587,7 @@ static void HIDAPI_DriverGameSir_HandleStatePacket(SDL_Joystick *joystick, SDL_D
         SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_GUIDE, buttons & BTN_HOME);
         SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_LEFT_STICK, buttons & BTN_L3);
         SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_RIGHT_STICK, buttons & BTN_R3);
-        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_MISC1, buttons & BTN_CAPTURE);
+        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_GAMESIR_SHARE, buttons & BTN_CAPTURE);
     }
 
     if (last[2] != data[2]) {
@@ -592,20 +619,23 @@ static void HIDAPI_DriverGameSir_HandleStatePacket(SDL_Joystick *joystick, SDL_D
         SDL_SendJoystickHat(timestamp, joystick, 0, hat);
 
         // Handle other buttons
-        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_RIGHT_PADDLE1, buttons & BTN_L4);
-        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_LEFT_PADDLE1, buttons & BTN_R4);
-        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_MISC2, buttons & BTN_MUTE);
+        //SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_GAMESIR_M, buttons & BTN_M);
+        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_GAMESIR_L4, buttons & BTN_L4);
+        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_GAMESIR_R4, buttons & BTN_R4);
+        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_GAMESIR_MUTE, buttons & BTN_MUTE);
     }
 
     if (last[3] != data[3]) {
         Uint8 buttons = data[3];
         // BTN4: L5 R5 L6 R6 L7 R7 L8 R8
-        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_LEFT_PADDLE2, buttons & BTN_L5);
-        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_RIGHT_PADDLE2, buttons & BTN_R5);
-        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_MISC3, buttons & BTN_L6);
-        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_MISC4, buttons & BTN_R6);
-        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_MISC5, buttons & BTN_L7);
-        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_MISC6, buttons & BTN_R7);
+        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_GAMESIR_L5, buttons & BTN_L5);
+        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_GAMESIR_R5, buttons & BTN_R5);
+        //SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_GAMESIR_L6, buttons & BTN_L6);
+        //SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_GAMESIR_R6, buttons & BTN_R6);
+        //SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_GAMESIR_L7, buttons & BTN_L7);
+        //SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_GAMESIR_R7, buttons & BTN_R7);
+        //SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_GAMESIR_L8, buttons & BTN_L8);
+        //SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_GAMESIR_R8, buttons & BTN_R8);
     }
 
     if (is_initial_packet) {
