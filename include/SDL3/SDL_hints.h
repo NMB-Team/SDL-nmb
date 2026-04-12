@@ -402,6 +402,11 @@ extern "C" {
  * - "Movie" - Music or sound with dialog
  * - "Media" - Music or sound without dialog
  *
+ * Android's AAudio target supports this hint as of SDL 3.4.4. Android does
+ * not support the exact same options as WASAPI, but for portability, will
+ * attempt to map these same strings to the `aaudio_usage_t` constants. For
+ * example, "Movie" and "Media" will both map to `AAUDIO_USAGE_MEDIA`, etc.
+ *
  * If your application applies its own echo cancellation, gain control, and
  * noise reduction it should also set SDL_HINT_AUDIO_DEVICE_RAW_STREAM.
  *
@@ -1345,6 +1350,23 @@ extern "C" {
 #define SDL_HINT_JOYSTICK_DEVICE "SDL_JOYSTICK_DEVICE"
 
 /**
+ * A variable containing a list of drum style controllers.
+ *
+ * The format of the string is a comma separated list of USB VID/PID pairs in
+ * hexadecimal form, e.g.
+ *
+ * `0xAAAA/0xBBBB,0xCCCC/0xDDDD`
+ *
+ * The variable can also take the form of "@file", in which case the named
+ * file will be loaded and interpreted as the value of the variable.
+ *
+ * This hint can be set anytime.
+ *
+ * \since This hint is available since SDL 3.4.4.
+ */
+#define SDL_HINT_JOYSTICK_DRUM_DEVICES "SDL_JOYSTICK_DRUM_DEVICES"
+
+/**
  * A variable controlling whether enhanced reports should be used for
  * controllers when using the HIDAPI driver.
  *
@@ -1425,6 +1447,26 @@ extern "C" {
 #define SDL_HINT_JOYSTICK_GAMEINPUT "SDL_JOYSTICK_GAMEINPUT"
 
 /**
+ * A variable controlling whether GameInput should be used for handling GIP
+ * devices that require raw report processing, but aren't supported by HIDRAW,
+ * such as Xbox One Guitars.
+ *
+ * Note that this is only supported with GameInput 3 or newer.
+ *
+ * The variable can be set to the following values:
+ *
+ * - "0": GameInput is not used to handle raw GIP devices.
+ * - "1": GameInput is used.
+ *
+ * The default is "1" when using GameInput 3 or newer, and is "0" otherwise.
+ *
+ * This hint should be set before SDL is initialized.
+ *
+ * \since This hint is available since SDL 3.4.4.
+ */
+#define SDL_HINT_JOYSTICK_GAMEINPUT_RAW "SDL_JOYSTICK_GAMEINPUT_RAW"
+
+/**
  * A variable containing a list of devices known to have a GameCube form
  * factor.
  *
@@ -1462,6 +1504,23 @@ extern "C" {
  * \since This hint is available since SDL 3.2.0.
  */
 #define SDL_HINT_JOYSTICK_GAMECUBE_DEVICES_EXCLUDED "SDL_JOYSTICK_GAMECUBE_DEVICES_EXCLUDED"
+
+/**
+ * A variable containing a list of guitar style controllers.
+ *
+ * The format of the string is a comma separated list of USB VID/PID pairs in
+ * hexadecimal form, e.g.
+ *
+ * `0xAAAA/0xBBBB,0xCCCC/0xDDDD`
+ *
+ * The variable can also take the form of "@file", in which case the named
+ * file will be loaded and interpreted as the value of the variable.
+ *
+ * This hint can be set anytime.
+ *
+ * \since This hint is available since SDL 3.4.4.
+ */
+#define SDL_HINT_JOYSTICK_GUITAR_DEVICES "SDL_JOYSTICK_GUITAR_DEVICES"
 
 /**
  * A variable controlling whether the HIDAPI joystick drivers should be used.

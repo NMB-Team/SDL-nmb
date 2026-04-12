@@ -20,28 +20,15 @@
 */
 #include "SDL_internal.h"
 
-#ifndef SDL_gameinput_h_
-#define SDL_gameinput_h_
+#ifndef SDL_waylandutil_h_
+#define SDL_waylandutil_h_
 
-#ifdef HAVE_GAMEINPUT_H
+#include "../SDL_sysvideo.h"
 
-#include <gameinput.h>
+/**
+ * Generates an activation token that can be passed to external clients.
+ * The token and window_id parameters must be freed with SDL_free() when done.
+ */
+extern bool Wayland_GetActivationTokenForExport(SDL_VideoDevice *_this, char **token, char **window_id);
 
-#ifndef GAMEINPUT_API_VERSION
-#define GAMEINPUT_API_VERSION 0
-#endif
-
-#if GAMEINPUT_API_VERSION == 3
-using namespace GameInput::v3;
-#elif GAMEINPUT_API_VERSION == 2
-using namespace GameInput::v2;
-#elif GAMEINPUT_API_VERSION == 1
-using namespace GameInput::v1;
-#endif
-
-extern bool SDL_InitGameInput(IGameInput **ppGameInput);
-extern void SDL_QuitGameInput(void);
-
-#endif // HAVE_GAMEINPUT_H
-
-#endif // SDL_gameinput_h_
+#endif // SDL_waylandutil_h_

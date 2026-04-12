@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import shlex
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -212,8 +213,7 @@ class JobDetails:
     minidump: bool = False
     intel: bool = False
     msys2_msystem: str = ""
-    msys2_env: str = ""
-    msys2_no_perl: bool = False
+    msys2_packages: list[str] = dataclasses.field(default_factory=list)
     werror: bool = True
     msvc_vcvars_arch: str = ""
     msvc_vcvars_sdk: str = ""
@@ -235,6 +235,7 @@ class JobDetails:
     pypi_packages: list[str] = dataclasses.field(default_factory=list)
     setup_gage_sdk_path: str = ""
     binutils_strings: str = "strings"
+    ctest_args: str = ""
 
     def to_workflow(self, enable_artifacts: bool) -> dict[str, str|bool]:
         data = {
@@ -248,8 +249,7 @@ class JobDetails:
             "enable-artifacts": enable_artifacts,
             "shell": self.shell,
             "msys2-msystem": self.msys2_msystem,
-            "msys2-env": self.msys2_env,
-            "msys2-no-perl": self.msys2_no_perl,
+            "msys2-packages": my_shlex_join(self.msys2_packages),
             "android-ndk": self.android_ndk,
             "java": self.java,
             "intel": self.intel,
@@ -305,6 +305,7 @@ class JobDetails:
             "pypi-packages": my_shlex_join(self.pypi_packages),
             "setup-ngage-sdk-path": self.setup_gage_sdk_path,
             "binutils-strings": self.binutils_strings,
+            "ctest-args": self.ctest_args,
         }
         return {k: v for k, v in data.items() if v != ""}
 
@@ -320,7 +321,7 @@ def my_shlex_join(s):
     return " ".join(escape(s))
 
 
-def spec_to_job(spec: JobSpec, key: str, trackmem_symbol_names: bool) -> JobDetails:
+def spec_to_job(spec: JobSpec, key: str, trackmem_symbol_names: bool, ctest_args: list[str]) -> JobDetails:
     job = JobDetails(
         name=spec.name,
         key=key,
@@ -489,6 +490,8 @@ def spec_to_job(spec: JobSpec, key: str, trackmem_symbol_names: bool) -> JobDeta
             job.shared_lib = SharedLibType.SO_0
             job.static_lib = StaticLibType.A
             fpic = True
+            job.cmake_arguments.append("-DSDLTEST_GDB=ON")
+            job.apt_packages.append("gdb")
             if spec.more_hard_deps:
                 # Some distros prefer to make important dependencies
                 # mandatory, so that SDL won't start up but lack expected
@@ -739,15 +742,26 @@ def spec_to_job(spec: JobSpec, key: str, trackmem_symbol_names: bool) -> JobDeta
             job.shell = "msys2 {0}"
             assert spec.msys2_platform
             job.msys2_msystem = spec.msys2_platform.value
-            job.msys2_env = {
+            job.shared_lib = SharedLibType.WIN32
+            job.static_lib = StaticLibType.A
+            msys2_env = {
                 "mingw32": "mingw-w64-i686",
                 "mingw64": "mingw-w64-x86_64",
                 "clang64": "mingw-w64-clang-x86_64",
                 "ucrt64": "mingw-w64-ucrt-x86_64",
             }[spec.msys2_platform.value]
-            job.msys2_no_perl = spec.msys2_platform in (Msys2Platform.Mingw32, )
-            job.shared_lib = SharedLibType.WIN32
-            job.static_lib = StaticLibType.A
+            job.msys2_packages.extend([
+                f"{msys2_env}-cc",
+                f"{msys2_env}-cmake",
+                f"{msys2_env}-ffmpeg",
+                f"{msys2_env}-ninja",
+                f"{msys2_env}-pkg-config",
+            ])
+            if spec.msys2_platform not in (Msys2Platform.Mingw32, ):
+                job.msys2_packages.append(f"{msys2_env}-perl")
+                job.msys2_packages.append(f"{msys2_env}-clang-tools-extra")
+            if job.ccache:
+                job.msys2_packages.append(f"{msys2_env}-ccache")
         case SdlPlatform.Riscos:
             job.ccache = False  # FIXME: enable when container gets upgrade
             # FIXME: Enable SDL_WERROR
@@ -819,6 +833,7 @@ def spec_to_job(spec: JobSpec, key: str, trackmem_symbol_names: bool) -> JobDeta
             "-DCMAKE_C_COMPILER_LAUNCHER=ccache",
             "-DCMAKE_CXX_COMPILER_LAUNCHER=ccache",
         ))
+    job.ctest_args = shlex.join(ctest_args)
     if not build_parallel:
         job.cmake_build_arguments.append("-j1")
     if job.cflags or job.cppflags:
@@ -841,9 +856,14 @@ def spec_to_job(spec: JobSpec, key: str, trackmem_symbol_names: bool) -> JobDeta
     return job
 
 
-def spec_to_platform(spec: JobSpec, key: str, enable_artifacts: bool, trackmem_symbol_names: bool) -> dict[str, str|bool]:
+def spec_to_platform(spec: JobSpec, key: str, enable_artifacts: bool, trackmem_symbol_names: bool, ctest_args:list[str]) -> dict[str, str|bool]:
     logger.info("spec=%r", spec)
-    job = spec_to_job(spec, key=key, trackmem_symbol_names=trackmem_symbol_names)
+    job = spec_to_job(
+        spec,
+        key=key,
+        trackmem_symbol_names=trackmem_symbol_names,
+        ctest_args=ctest_args,
+    )
     logger.info("job=%r", job)
     platform = job.to_workflow(enable_artifacts=enable_artifacts)
     logger.info("platform=%r", platform)
@@ -872,6 +892,7 @@ def main():
     )
 
     filters = []
+    ctest_args = []
     if args.commit_message_file:
         with open(args.commit_message_file, "r") as f:
             commit_message = f.read()
@@ -884,6 +905,9 @@ def main():
             if re.search(r"\[sdl-ci-(full-)?trackmem(-symbol-names)?]", commit_message, flags=re.M):
                 args.trackmem_symbol_names = True
 
+            for m in re.finditer(r"\[sdl-ci-ctest-args? (.*)]", commit_message, flags=re.M):
+                ctest_args.extend(shlex.split(m.group(1)))
+
     if not filters:
         filters.append("*")
 
@@ -891,7 +915,7 @@ def main():
 
     all_level_platforms = {}
 
-    all_platforms = {key: spec_to_platform(spec, key=key, enable_artifacts=args.enable_artifacts, trackmem_symbol_names=args.trackmem_symbol_names) for key, spec in JOB_SPECS.items()}
+    all_platforms = {key: spec_to_platform(spec, key=key, enable_artifacts=args.enable_artifacts, trackmem_symbol_names=args.trackmem_symbol_names, ctest_args=ctest_args) for key, spec in JOB_SPECS.items()}
 
     for level_i, level_keys in enumerate(all_level_keys, 1):
         level_key = f"level{level_i}"

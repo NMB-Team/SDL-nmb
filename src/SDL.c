@@ -828,6 +828,17 @@ const char *SDL_GetPlatform(void)
 #endif
 }
 
+bool SDL_IsPhone(void)
+{
+#if defined(SDL_PLATFORM_ANDROID) || \
+    (defined(SDL_PLATFORM_IOS) && !defined(SDL_PLATFORM_VISIONOS))
+    if (!SDL_IsTablet() && !SDL_IsTV()) {
+        return true;
+    }
+#endif
+    return false;
+}
+
 bool SDL_IsTablet(void)
 {
 #ifdef SDL_PLATFORM_ANDROID
