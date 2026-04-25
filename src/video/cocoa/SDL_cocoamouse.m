@@ -33,6 +33,8 @@
 #define DEBUG_COCOAMOUSE
 #endif
 
+//#define USE_GCMOUSE_SCROLL
+
 #ifdef DEBUG_COCOAMOUSE
 #define DLog(fmt, ...) printf("%s: " fmt "\n", SDL_FUNCTION, ##__VA_ARGS__)
 #else
@@ -262,6 +264,9 @@ static id cocoa_mouse_disconnect_observer = nil;
 // Atomic for thread-safe access during high-frequency mouse input
 static SDL_AtomicInt cocoa_gcmouse_relative_mode;
 static bool cocoa_has_gcmouse = false;
+
+
+#ifdef USE_GCMOUSE_SCROLL
 static SDL_MouseWheelDirection cocoa_mouse_scroll_direction = SDL_MOUSEWHEEL_NORMAL;
 
 static void Cocoa_UpdateGCMouseScrollDirection(void)
@@ -281,6 +286,7 @@ static void Cocoa_UpdateGCMouseScrollDirection(void)
         cocoa_mouse_scroll_direction = SDL_MOUSEWHEEL_NORMAL;
     }
 }
+#endif
 
 static bool Cocoa_SetGCMouseRelativeMode(bool enabled)
 {
@@ -348,13 +354,20 @@ static void Cocoa_OnGCMouseConnected(GCMouse *mouse)
             }
         };
 
+    #ifdef USE_GCMOUSE_SCROLL
+    /*
+    18/04/2026
+    There seems to be a bug in the CGMouse API, at least when using some mouse types.
+    An event is fired only for the first scroll in one direction. Repeated 1-step
+    scrolls in the same direction do not raise an event.
+    Observed on macOS 26.3.1 with 2 different USB mice.
+    */
     mouse.mouseInput.scroll.valueChangedHandler =
         ^(GCControllerDirectionPad *dpad, float xValue, float yValue) {
+            DLog("GCMouse scroll: %f, %f", xValue, yValue);
             Uint64 timestamp = SDL_GetTicksNS();
-            // Raw scroll values: vertical in first axis, horizontal in second.
-            // Vertical values are inverted compared to SDL conventions.
-            float vertical = -xValue;
-            float horizontal = yValue;
+            float vertical = yValue;
+            float horizontal = xValue;
 
             if (cocoa_mouse_scroll_direction == SDL_MOUSEWHEEL_FLIPPED) {
                 vertical = -vertical;
@@ -365,7 +378,8 @@ static void Cocoa_OnGCMouseConnected(GCMouse *mouse)
                                cocoa_mouse_scroll_direction);
         };
     Cocoa_UpdateGCMouseScrollDirection();
-
+    #endif // USE_GCMOUSE_SCROLL
+    
     // Use high-priority queue for low-latency input
     dispatch_queue_t queue = dispatch_queue_create("org.libsdl.input.mouse",
                                                    DISPATCH_QUEUE_SERIAL);
@@ -852,10 +866,12 @@ void Cocoa_HandleMouseEvent(SDL_VideoDevice *_this, NSEvent *event)
 
 void Cocoa_HandleMouseWheel(SDL_Window *window, NSEvent *event)
 {
+    #ifdef USE_GCMOUSE_SCROLL
     // GCMouse handles scroll events directly, skip NSEvent path to avoid duplicates
     if (Cocoa_HasGCMouse()) {
         return;
     }
+    #endif
 
     SDL_MouseID mouseID = SDL_DEFAULT_MOUSE_ID;
     SDL_MouseWheelDirection direction;

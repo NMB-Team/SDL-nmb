@@ -37,7 +37,7 @@ class CRenderer : public MDirectScreenAccess
     void Clear(TUint32 iColor);
     bool Copy(SDL_Renderer *renderer, SDL_Texture *texture, const SDL_Rect *srcrect, const SDL_Rect *dstrect);
     bool CopyEx(SDL_Renderer *renderer, SDL_Texture *texture, const NGAGE_CopyExData *copydata);
-    bool CreateTextureData(NGAGE_TextureData *aTextureData, const TInt aWidth, const TInt aHeight);
+    bool CreateTextureData(NGAGE_TextureData *aTextureData, const TInt aWidth, const TInt aHeight, const TInt aAccess);
     void DrawLines(NGAGE_Vertex *aVerts, const TInt aCount);
     void DrawPoints(NGAGE_Vertex *aVerts, const TInt aCount);
     void FillRects(NGAGE_Vertex *aVerts, const TInt aCount);
@@ -46,6 +46,10 @@ class CRenderer : public MDirectScreenAccess
     void SetClipRect(TInt aX, TInt aY, TInt aWidth, TInt aHeight);
     void UpdateFPS();
     void SuspendScreenSaver(TBool aSuspend);
+
+    // Render target management.
+    void SetRenderTarget(NGAGE_TextureData *aTarget);
+    CFbsBitGc* GetCurrentGc();
 
     // Event handling.
     void DisableKeyBlocking();
@@ -86,6 +90,16 @@ class CRenderer : public MDirectScreenAccess
 
     // Screen saver.
     TBool iSuspendScreenSaver;
+
+    // Render target.
+    NGAGE_TextureData *iCurrentRenderTarget;
+
+    // Persistent buffers to avoid per-frame allocations.
+    void *iPixelBufferA;
+    void *iPixelBufferB;
+    TInt iPixelBufferSize;
+    TPoint *iPointsBuffer;
+    TInt iPointsBufferSize;
 };
 
 #endif // ngage_video_render_ngage_c_hpp

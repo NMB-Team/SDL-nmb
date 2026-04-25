@@ -155,18 +155,11 @@ static bool NGAGE_CreateTexture(SDL_Renderer *renderer, SDL_Texture *texture, SD
         return false;
     }
 
-    if (!NGAGE_CreateTextureData(data, texture->w, texture->h)) {
+    if (!NGAGE_CreateTextureData(data, texture->w, texture->h, texture->access)) {
         SDL_free(data);
         return false;
     }
 
-    SDL_Surface *surface = SDL_CreateSurface(texture->w, texture->h, texture->format);
-    if (!surface) {
-        SDL_free(data);
-        return false;
-    }
-
-    data->surface = surface;
     texture->internal = data;
 
     return true;
@@ -290,8 +283,12 @@ static bool NGAGE_QueueCopyEx(SDL_Renderer *renderer, SDL_RenderCommand *cmd, SD
     verts->dstrect.h = (int)dstrect->h;
 
     verts->angle = Real2Fix(angle);
-    verts->center.x = Real2Fix(center->x);
-    verts->center.y = Real2Fix(center->y);
+    // Convert center from destination-space to source-space.
+    // Center is relative to dstrect, but rotation is applied in source texture space.
+    float center_x_src = (center->x / dstrect->w) * srcquad->w;
+    float center_y_src = (center->y / dstrect->h) * srcquad->h;
+    verts->center.x = Real2Fix(center_x_src);
+    verts->center.y = Real2Fix(center_y_src);
     verts->scale_x = Real2Fix(scale_x);
     verts->scale_y = Real2Fix(scale_y);
 
@@ -447,29 +444,26 @@ static bool NGAGE_UpdateTexture(SDL_Renderer *renderer, SDL_Texture *texture, co
 {
     NGAGE_TextureData *phdata = (NGAGE_TextureData *)texture->internal;
 
-    SDL_Surface *surface = phdata->surface;
-    Uint8 *src, *dst;
-    int row;
-    size_t length;
-
-    if (SDL_MUSTLOCK(surface)) {
-        if (!SDL_LockSurface(surface)) {
-            return false;
-        }
+    if (!phdata) {
+        return false;
     }
-    src = (Uint8 *)pixels;
-    dst = (Uint8 *)surface->pixels +
-          rect->y * surface->pitch +
-          rect->x * surface->fmt->bytes_per_pixel;
 
-    length = (size_t)rect->w * surface->fmt->bytes_per_pixel;
-    for (row = 0; row < rect->h; ++row) {
+    Uint8 *dst = (Uint8 *)NGAGE_GetBitmapDataAddress(phdata);
+    if (!dst) {
+        return false;
+    }
+
+    const int bytes_per_pixel = 2;
+    const int bitmap_pitch = texture->w * bytes_per_pixel;
+
+    const Uint8 *src = (const Uint8 *)pixels;
+    dst += rect->y * bitmap_pitch + rect->x * bytes_per_pixel;
+
+    const size_t length = (size_t)rect->w * bytes_per_pixel;
+    for (int row = 0; row < rect->h; ++row) {
         SDL_memcpy(dst, src, length);
         src += pitch;
-        dst += surface->pitch;
-    }
-    if (SDL_MUSTLOCK(surface)) {
-        SDL_UnlockSurface(surface);
+        dst += bitmap_pitch;
     }
 
     return true;
@@ -478,12 +472,21 @@ static bool NGAGE_UpdateTexture(SDL_Renderer *renderer, SDL_Texture *texture, co
 static bool NGAGE_LockTexture(SDL_Renderer *renderer, SDL_Texture *texture, const SDL_Rect *rect, void **pixels, int *pitch)
 {
     NGAGE_TextureData *phdata = (NGAGE_TextureData *)texture->internal;
-    SDL_Surface *surface = phdata->surface;
 
-    *pixels =
-        (void *)((Uint8 *)surface->pixels + rect->y * surface->pitch +
-                 rect->x * surface->fmt->bytes_per_pixel);
-    *pitch = surface->pitch;
+    if (!phdata) {
+        return false;
+    }
+
+    Uint8 *data = (Uint8 *)NGAGE_GetBitmapDataAddress(phdata);
+    if (!data) {
+        return false;
+    }
+
+    const int bytes_per_pixel = 2;
+    const int bitmap_pitch = texture->w * bytes_per_pixel;
+
+    *pixels = (void *)(data + rect->y * bitmap_pitch + rect->x * bytes_per_pixel);
+    *pitch = bitmap_pitch;
     return true;
 }
 
@@ -493,6 +496,20 @@ static void NGAGE_UnlockTexture(SDL_Renderer *renderer, SDL_Texture *texture)
 
 static bool NGAGE_SetRenderTarget(SDL_Renderer *renderer, SDL_Texture *texture)
 {
+    NGAGE_RendererData *data = (NGAGE_RendererData *)renderer->internal;
+
+    if (texture) {
+        NGAGE_TextureData *texturedata = (NGAGE_TextureData *)texture->internal;
+        if (!texturedata || !texturedata->gc) {
+            return SDL_SetError("Texture is not a render target");
+        }
+        data->current_target = texture;
+        NGAGE_SetRenderTargetInternal(texturedata);
+    } else {
+        data->current_target = NULL;
+        NGAGE_SetRenderTargetInternal(NULL);
+    }
+
     return true;
 }
 
@@ -512,7 +529,6 @@ static void NGAGE_DestroyTexture(SDL_Renderer *renderer, SDL_Texture *texture)
 {
     NGAGE_TextureData *data = (NGAGE_TextureData *)texture->internal;
     if (data) {
-        SDL_DestroySurface(data->surface);
         NGAGE_DestroyTextureData(data);
         SDL_free(data);
         texture->internal = 0;

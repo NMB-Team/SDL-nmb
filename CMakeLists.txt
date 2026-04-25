@@ -78,6 +78,7 @@ include("${SDL3_SOURCE_DIR}/cmake/3rdparty.cmake")
 include("${SDL3_SOURCE_DIR}/cmake/PreseedMSVCCache.cmake")
 include("${SDL3_SOURCE_DIR}/cmake/PreseedEmscriptenCache.cmake")
 include("${SDL3_SOURCE_DIR}/cmake/PreseedNokiaNGageCache.cmake")
+include("${SDL3_SOURCE_DIR}/cmake/PreseedDOSCache.cmake")
 
 SDL_DetectCompiler()
 SDL_DetectTargetCPUArchitectures(SDL_CPUS)
@@ -163,7 +164,7 @@ endif()
 # The hidraw support doesn't catch Xbox, PS4 and Nintendo controllers,
 #  so we'll just use libusb when it's available. libusb does not support iOS,
 #  so we default to yes on iOS.
-if(IOS OR TVOS OR VISIONOS OR WATCHOS OR ANDROID OR NGAGE)
+if(IOS OR TVOS OR VISIONOS OR WATCHOS OR ANDROID OR NGAGE OR DOS)
   set(SDL_HIDAPI_LIBUSB_AVAILABLE FALSE)
 else()
   set(SDL_HIDAPI_LIBUSB_AVAILABLE TRUE)
@@ -207,7 +208,7 @@ if(EMSCRIPTEN)
   set(SDL_SHARED_AVAILABLE OFF)
 endif()
 
-if(VITA OR PSP OR PS2 OR N3DS OR RISCOS OR NGAGE)
+if(VITA OR PSP OR PS2 OR N3DS OR RISCOS OR NGAGE OR DOS)
   set(SDL_SHARED_AVAILABLE OFF)
 endif()
 
@@ -282,8 +283,11 @@ if(COMMAND SDL_Preseed_CMakeCache)
   set(SDL_PRESEED_AVAILABLE ON)
 endif()
 
+set(SDL_VULKAN_DEFAULT ON)
+
 set(SDL_X11_XRANDR_DEFAULT ON)
 if(SOLARIS)
+  set(SDL_VULKAN_DEFAULT OFF)
   set(SDL_X11_XRANDR_DEFAULT OFF)
 endif()
 
@@ -372,7 +376,7 @@ dep_option(SDL_RENDER_D3D12        "Enable the Direct3D 12 render driver" ON "SD
 dep_option(SDL_RENDER_METAL        "Enable the Metal render driver" ON "SDL_RENDER;APPLE" OFF)
 dep_option(SDL_RENDER_GPU          "Enable the SDL_GPU render driver" ON "SDL_RENDER;SDL_GPU" OFF)
 dep_option(SDL_VIVANTE             "Use Vivante EGL video driver" ON "${UNIX_SYS};SDL_CPU_ARM32" OFF)
-dep_option(SDL_VULKAN              "Enable Vulkan support" ON "SDL_VIDEO;ANDROID OR APPLE OR LINUX OR FREEBSD OR OPENBSD OR WINDOWS" OFF)
+dep_option(SDL_VULKAN              "Enable Vulkan support" "${SDL_VULKAN_DEFAULT}" "SDL_VIDEO;ANDROID OR APPLE OR LINUX OR FREEBSD OR OPENBSD OR WINDOWS" OFF)
 dep_option(SDL_RENDER_VULKAN       "Enable the Vulkan render driver" ON "SDL_RENDER;SDL_VULKAN" OFF)
 dep_option(SDL_METAL               "Enable Metal support" ON "APPLE" OFF)
 set_option(SDL_OPENVR              "Use OpenVR video driver" OFF)
@@ -423,6 +427,21 @@ dep_option(SDL_EXAMPLES_LINK_SHARED "link examples to shared SDL library" "${SDL
 if(VITA)
   set_option(VIDEO_VITA_PIB  "Build with PSVita piglet gles2 support" OFF)
   set_option(VIDEO_VITA_PVR  "Build with PSVita PVR gles/gles2 support" OFF)
+endif()
+
+if(DOS)
+  set(SDL_GPU              OFF)
+  set(SDL_CAMERA           OFF)
+  set(SDL_HAPTIC           OFF)
+  set(SDL_HIDAPI           OFF)
+  set(SDL_POWER            OFF)
+  set(SDL_SENSOR           OFF)
+  set(SDL_DIALOG           OFF)
+  set(SDL_DUMMYCAMERA      OFF)
+  set(SDL_OFFSCREEN        OFF)
+  set(SDL_RENDER_GPU       OFF)
+  set(SDL_TRAY             OFF)
+  set(SDL_PROCESS          OFF)
 endif()
 
 if (NGAGE)
@@ -3251,6 +3270,7 @@ elseif(PS2)
       gskit
       dmakit
       ps2_drivers
+      atomic
   )
 elseif(N3DS)
   sdl_glob_sources("${SDL3_SOURCE_DIR}/src/main/n3ds/*.c")
@@ -3330,6 +3350,51 @@ elseif(N3DS)
     "${SDL3_SOURCE_DIR}/src/io/n3ds/*.c"
     "${SDL3_SOURCE_DIR}/src/io/n3ds/*.h"
   )
+
+elseif(DOS)
+  sdl_glob_sources("${SDL3_SOURCE_DIR}/src/main/dos/*.c")
+  sdl_glob_sources("${SDL3_SOURCE_DIR}/src/core/dos/*.c")
+
+  set(SDL_AUDIO_DRIVER_DOS_SOUNDBLASTER 1)
+  sdl_glob_sources("${SDL3_SOURCE_DIR}/src/audio/dos/*.c")
+  set(HAVE_SDL_AUDIO TRUE)
+
+  set(SDL_VIDEO_DRIVER_DOSVESA 1)
+  sdl_glob_sources("${SDL3_SOURCE_DIR}/src/video/dos/*.c")
+  set(HAVE_SDL_VIDEO TRUE)
+
+  set(SDL_FSOPS_POSIX 1)
+  sdl_sources("${SDL3_SOURCE_DIR}/src/filesystem/posix/SDL_sysfsops.c")
+  set(HAVE_SDL_FSOPS TRUE)
+
+  set(SDL_FILESYSTEM_DOS 1)
+  sdl_glob_sources("${SDL3_SOURCE_DIR}/src/filesystem/dos/*.c")
+  set(HAVE_SDL_FILESYSTEM TRUE)
+
+  # Wall-clock time (SDL_GetDateTimeLocalized etc.) reuses the Unix implementation;
+  # DJGPP provides gettimeofday/localtime so this works as-is.
+  set(SDL_TIME_UNIX 1)
+  sdl_glob_sources("${SDL3_SOURCE_DIR}/src/time/unix/*.c")
+  set(HAVE_SDL_TIME TRUE)
+
+  set(SDL_TIMER_DOS 1)
+  sdl_glob_sources("${SDL3_SOURCE_DIR}/src/timer/dos/*.c")
+  set(HAVE_SDL_TIMERS TRUE)
+
+  set(SDL_JOYSTICK_DOS 1)
+  sdl_glob_sources("${SDL3_SOURCE_DIR}/src/joystick/dos/*.c")
+  set(HAVE_SDL_JOYSTICK TRUE)
+
+  set(SDL_THREAD_DOS 1)
+  sdl_glob_sources(
+    "${SDL3_SOURCE_DIR}/src/thread/generic/SDL_syscond.c"
+    "${SDL3_SOURCE_DIR}/src/thread/generic/SDL_syscond_c.h"
+    "${SDL3_SOURCE_DIR}/src/thread/generic/SDL_sysrwlock.c"
+    "${SDL3_SOURCE_DIR}/src/thread/generic/SDL_sysrwlock_c.h"
+    "${SDL3_SOURCE_DIR}/src/thread/dos/*.c"
+    "${SDL3_SOURCE_DIR}/src/thread/dos/*.h"
+  )
+  set(HAVE_SDL_THREADS TRUE)
 
 elseif(NGAGE)
 

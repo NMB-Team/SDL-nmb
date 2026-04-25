@@ -725,6 +725,23 @@ extern "C" {
 #define SDL_HINT_DISPLAY_USABLE_BOUNDS "SDL_DISPLAY_USABLE_BOUNDS"
 
 /**
+ * A variable that enables a fast framebuffer path on DOS.
+ *
+ * When set to "1", SDL_UpdateWindowSurface() copies the system-RAM surface
+ * directly to VRAM and skips software cursor compositing and vsync.
+ *
+ * The variable can be set to the following values:
+ *
+ * - "0": Use the normal path with cursor compositing and vsync. (default)
+ * - "1": Use the fast direct-to-VRAM path when available.
+ *
+ * This hint must be set before the first call to SDL_GetWindowSurface().
+ *
+ * \since This hint is available since SDL 3.6.0.
+ */
+#define SDL_HINT_DOS_ALLOW_DIRECT_FRAMEBUFFER "SDL_DOS_ALLOW_DIRECT_FRAMEBUFFER"
+
+/**
  * Set the level of checking for invalid parameters passed to SDL functions.
  *
  * The variable can be set to the following values:
@@ -2840,7 +2857,7 @@ extern "C" {
  *   (default)
  * - "1": Cursors will automatically match the display content scale (e.g. a
  *   2x sized cursor will be used when the window is on a monitor with 200%
- *   scale). This is currently implemented on Windows and Wayland.
+ *   scale). This is currently implemented on Windows.
  *
  * This hint needs to be set before creating cursors.
  *
