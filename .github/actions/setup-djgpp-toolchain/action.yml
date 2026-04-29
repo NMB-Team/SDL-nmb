@@ -47,7 +47,7 @@ runs:
       with:
         path: '${{ runner.temp }}/${{ steps.calc.outputs.archive }}'
         key: ${{ steps.calc.outputs.cache-key }}
-    - name: 'Extract DJGP archive'
+    - name: 'Extract DJGPP archive'
       shell: pwsh
       run: |
         $archive = "${{ steps.calc.outputs.archive }}";

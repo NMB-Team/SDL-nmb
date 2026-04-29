@@ -70,11 +70,11 @@ static bool DOSVESA_CreateWindow(SDL_VideoDevice *device, SDL_Window *window, SD
         }
 
         SDL_DisplayMode *mode = NULL;
+        SDL_DisplayMode closest;
         if (window->requested_fullscreen_mode.internal) {
             // App explicitly set a fullscreen mode.
             mode = &window->requested_fullscreen_mode;
         } else if (window->floating.w > 0 && window->floating.h > 0) {
-            SDL_DisplayMode closest;
             if (SDL_GetClosestFullscreenDisplayMode(display->id, window->floating.w, window->floating.h, 0.0f, false, &closest)) {
                 mode = &closest;
             }
