@@ -376,7 +376,7 @@ static bool HIDAPI_DriverXboxOne_IsSupportedDevice(SDL_HIDAPI_Device *device, co
     }
 #endif
 #ifdef SDL_PLATFORM_WIN32
-    if (SDL_strncmp(device->path, "\\\\?\\HID#", 8) == 0) {
+    if (device && SDL_strncmp(device->path, "\\\\?\\HID#", 8) == 0) {
         // Windows provides a fake HID endpoint for XGIP controllers, don't use this
         return false;
     }
