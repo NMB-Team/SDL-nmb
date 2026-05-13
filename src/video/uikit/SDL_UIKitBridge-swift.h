@@ -18,45 +18,22 @@
      misrepresented as being the original software.
   3. This notice may not be removed or altered from any source distribution.
 */
-#include "SDL_internal.h"
+#import "SDL_uikitviewcontroller.h"
 
-#include <e32std.h>
-#include <e32svr.h>
-#include <hal.h>
+// Called from Swift scene delegates when window size changes
+void SDL_VisionOS_SendSizeChanged(long width, long height);
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+// Called from Swift scene delegates to get the initial curvature
+float SDL_VisionOS_GetCurvature();
 
-bool NGAGE_IsClassicModel()
-{
-    int phone_id;
-    HAL::Get(HALData::EMachineUid, phone_id);
+// Called from Swift scene delegates when window curvature changes
+void SDL_VisionOS_SendCurvatureChanged(float curvature);
 
-    return (0x101f8c19 == phone_id);
-}
+// Called from Swift scene delegates when pointer mode changes
+void SDL_VisionOS_SendPointerMode(bool enabled);
 
-void NGAGE_DebugPrintf(const char *fmt, ...)
-{
-    char buffer[512] = { 0 };
+// Called from Swift scene delegates when visionOS delivers a touch event
+void SDL_VisionOS_SendTouch(NSTimeInterval timestamp, SDL_FingerID fingerID, Uint32 eventType, float x, float y);
 
-    va_list ap;
-    va_start(ap, fmt);
-    (void)SDL_vsnprintf(buffer, sizeof(buffer), fmt, ap);
-    va_end(ap);
-
-    TBuf<512> buf;
-    buf.Copy(TPtrC8((TText8 *)buffer));
-
-    RDebug::Print(_L("%S"), &buf);
-}
-
-TInt NGAGE_GetFreeHeapMemory()
-{
-    TInt heap_available = 0;
-    return User::Available(heap_available);
-}
-
-#ifdef __cplusplus
-}
-#endif
+// Called from Swift to register the RealityKit hosting object with the SDL window
+void SDL_VisionOS_SetWindowRealityKitHosting(id hosting);

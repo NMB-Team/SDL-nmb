@@ -18,45 +18,16 @@
      misrepresented as being the original software.
   3. This notice may not be removed or altered from any source distribution.
 */
-#include "SDL_internal.h"
 
-#include <e32std.h>
-#include <e32svr.h>
-#include <hal.h>
+import SwiftUI
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-bool NGAGE_IsClassicModel()
-{
-    int phone_id;
-    HAL::Get(HALData::EMachineUid, phone_id);
-
-    return (0x101f8c19 == phone_id);
+extension SDL_uikitviewcontroller {
+    @available(visionOS 26.0, *)
+    @objc func initializeVisionOSCurvedUI() {
+        Task {
+            let hosting = SDL_CurvedContentHosting()
+            hosting.present(from: self)
+            SDL_VisionOS_SetWindowRealityKitHosting(hosting)
+        }
+    }
 }
-
-void NGAGE_DebugPrintf(const char *fmt, ...)
-{
-    char buffer[512] = { 0 };
-
-    va_list ap;
-    va_start(ap, fmt);
-    (void)SDL_vsnprintf(buffer, sizeof(buffer), fmt, ap);
-    va_end(ap);
-
-    TBuf<512> buf;
-    buf.Copy(TPtrC8((TText8 *)buffer));
-
-    RDebug::Print(_L("%S"), &buf);
-}
-
-TInt NGAGE_GetFreeHeapMemory()
-{
-    TInt heap_available = 0;
-    return User::Available(heap_available);
-}
-
-#ifdef __cplusplus
-}
-#endif
