@@ -902,7 +902,9 @@ static inline void svst4ub_u16(svbool_t vPredu8,
 /*! \note the Element range of vMask is [0, 0xFF]
  */
 SDL_TARGETING("arch=armv8-a+sve2")
-static inline svuint16_t sdl_sve_chn_blend_with_mask(svuint16_t vSource, svuint16_t vTarget, svuint16_t vMask)
+static inline svuint16_t sdl_sve_chn_blend_with_mask(svuint16_t vSource,
+                                                     svuint16_t vTarget,
+                                                     svuint16_t vMask)
 {
     // vTarget = vSource * vMask + vTarget * (255 - vMask);
     svuint16_t vTemp0 = svmul_u16_m(svptrue_b16(), vSource, vMask);
@@ -924,6 +926,25 @@ static inline svuint16_t sdl_sve_chn_blend_with_mask(svuint16_t vSource, svuint1
     return svlsr_n_u16_m(svptrue_b16(), vTemp0, 8); // vTarget >> 8;
 }
 
+/*! \note the Element range of vMask is [0, 0xFF]
+ */
+SDL_TARGETING("arch=armv8-a+sve2")
+static inline svuint16_t sdl_sve_chn_blend_with_mask_fast(svuint16_t vSource,
+                                                          svuint16_t vTarget,
+                                                          svuint16_t vMask)
+{
+    // vTarget = vSource * vMask + vTarget * (255 - vMask);
+    svuint16_t vTemp0 = svmul_u16_m(svptrue_b16(), vSource, vMask);
+    vTemp0 = svmla_u16_m(svptrue_b16(),
+                         vTemp0,
+                         vTarget,
+                         svsub_u16_m(svptrue_b16(),
+                                     svdup_u16(255),
+                                     vMask));
+
+    return svlsr_n_u16_m(svptrue_b16(), vTemp0, 8); // vTarget >> 8;
+}
+
 /*! \note the hwOpacity range [0, 0x100]
  */
 SDL_TARGETING("arch=armv8-a+sve2")
@@ -941,6 +962,23 @@ static inline svuint16_t sdl_sve_chn_blend_with_opacity(svuint16_t vSource,
     vTarget = svadd_u16_m(svptrue_b16(), vTemp0, vTemp1);
 
     return svlsr_n_u16_m(svptrue_b16(), vTarget, 8); // vTarget >> 8;
+}
+
+/*! \note the hwOpacity range [0, 0x100]
+ */
+SDL_TARGETING("arch=armv8-a+sve2")
+static inline svuint16_t sdl_sve_chn_blend_with_opacity_fast(svuint16_t vSource,
+                                                        svuint16_t vTarget,
+                                                        uint16_t hwOpacity)
+{
+    // vTarget = vSource * vMask + vTarget * (255 - vMask);
+    svuint16_t vTemp0 = svmul_n_u16_m(svptrue_b16(), vSource, hwOpacity);
+    vTemp0 = svmla_n_u16_m(svptrue_b16(),
+                         vTemp0,
+                         vTarget,
+                         256 - hwOpacity);
+
+    return svlsr_n_u16_m(svptrue_b16(), vTemp0, 8); // vTarget >> 8;
 }
 
 /*! \note the Element range of vMask is [0, 0xFF]

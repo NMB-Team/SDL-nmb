@@ -2798,15 +2798,18 @@ static void data_device_handle_enter(void *data, struct wl_data_device *wl_data_
                                      wl_fixed_t x, wl_fixed_t y, struct wl_data_offer *id)
 {
     SDL_WaylandDataDevice *data_device = data;
+    SDL_WindowData *window = surface ? Wayland_GetWindowDataForOwnedSurface(surface) : NULL;
     data_device->has_mime_file = false;
     data_device->has_mime_text = false;
-    uint32_t dnd_action = WL_DATA_DEVICE_MANAGER_DND_ACTION_NONE;
 
     data_device->drag_serial = serial;
 
+    // Save the drag offer so it can be freed later.
     if (id) {
         data_device->drag_offer = wl_data_offer_get_user_data(id);
+    }
 
+    if (data_device->drag_offer && window && window->accepts_drag_and_drop) {
         // TODO: SDL Support more mime types
 #ifdef SDL_USE_LIBDBUS
         if (Wayland_data_offer_has_mime(data_device->drag_offer, FILE_PORTAL_MIME)) {
@@ -2832,48 +2835,58 @@ static void data_device_handle_enter(void *data, struct wl_data_device *wl_data_
             }
         }
 
-        // SDL only supports "copy" style drag and drop
         if (data_device->has_mime_file || data_device->has_mime_text) {
-            dnd_action = WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY;
-        } else {
-            // drag_mime is NULL this will decline the offer
-            wl_data_offer_accept(id, serial, NULL);
-        }
-        if (wl_data_offer_get_version(data_device->drag_offer->offer) >=
-            WL_DATA_OFFER_SET_ACTIONS_SINCE_VERSION) {
-            wl_data_offer_set_actions(data_device->drag_offer->offer,
-                                      dnd_action, dnd_action);
-        }
-
-        // find the current window
-        if (surface) {
-            SDL_WindowData *window = Wayland_GetWindowDataForOwnedSurface(surface);
-            if (window) {
-                data_device->dnd_window = window->sdlwindow;
-                const float dx = (float)wl_fixed_to_double(x);
-                const float dy = (float)wl_fixed_to_double(y);
-                SDL_SendDropPosition(data_device->dnd_window, dx, dy);
-                SDL_LogTrace(SDL_LOG_CATEGORY_INPUT,
-                             ". In wl_data_device_listener . data_device_handle_enter on data_offer 0x%08x at %d x %d into window %d for serial %d",
-                             WAYLAND_wl_proxy_get_id((struct wl_proxy *)id),
-                             wl_fixed_to_int(x), wl_fixed_to_int(y), SDL_GetWindowID(data_device->dnd_window), serial);
-            } else {
-                data_device->dnd_window = NULL;
-                SDL_LogTrace(SDL_LOG_CATEGORY_INPUT,
-                             ". In wl_data_device_listener . data_device_handle_enter on data_offer 0x%08x at %d x %d for serial %d",
-                             WAYLAND_wl_proxy_get_id((struct wl_proxy *)id),
-                             wl_fixed_to_int(x), wl_fixed_to_int(y), serial);
+            // SDL only supports "copy" style drag and drop
+            if (wl_data_offer_get_version(data_device->drag_offer->offer) >= WL_DATA_OFFER_SET_ACTIONS_SINCE_VERSION) {
+                wl_data_offer_set_actions(data_device->drag_offer->offer, WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY, WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY);
             }
+
+            // Set the destination window and send the initial position.
+            data_device->dnd_window = window->sdlwindow;
+            data_device->dnd_surface = surface;
+            double dx = wl_fixed_to_double(x);
+            double dy = wl_fixed_to_double(y);
+
+            // If over the mask, adjust the offset.
+            if (surface == window->mask.surface) {
+                dx += (double)window->mask.offset_x;
+                dy += (double)window->mask.offset_y;
+            }
+
+            dx *= window->pointer_scale.x;
+            dy *= window->pointer_scale.y;
+
+            SDL_SendDropPosition(data_device->dnd_window, (float)dx, (float)dy);
+            SDL_LogTrace(SDL_LOG_CATEGORY_INPUT,
+                         ". In wl_data_device_listener . data_device_handle_enter on data_offer 0x%08x at %d x %d into window %d for serial %d",
+                         WAYLAND_wl_proxy_get_id((struct wl_proxy *)id),
+                         wl_fixed_to_int(x), wl_fixed_to_int(y), SDL_GetWindowID(data_device->dnd_window), serial);
         } else {
+            // Decline the offer.
+            wl_data_offer_accept(id, serial, NULL);
+            if (wl_data_offer_get_version(data_device->drag_offer->offer) >= WL_DATA_OFFER_SET_ACTIONS_SINCE_VERSION) {
+                wl_data_offer_set_actions(data_device->drag_offer->offer, WL_DATA_DEVICE_MANAGER_DND_ACTION_NONE, WL_DATA_DEVICE_MANAGER_DND_ACTION_NONE);
+            }
+
             SDL_LogTrace(SDL_LOG_CATEGORY_INPUT,
                          ". In wl_data_device_listener . data_device_handle_enter on data_offer 0x%08x at %d x %d for serial %d",
-                         WAYLAND_wl_proxy_get_id((struct wl_proxy *)id),
-                         wl_fixed_to_int(x), wl_fixed_to_int(y), serial);
+                         WAYLAND_wl_proxy_get_id((struct wl_proxy *)id), wl_fixed_to_int(x), wl_fixed_to_int(y), serial);
         }
     } else {
+        data_device->dnd_window = NULL;
+        data_device->dnd_surface = NULL;
+
+        // Decline the offer.
+        if (id) {
+            wl_data_offer_accept(id, serial, NULL);
+            if (wl_data_offer_get_version(data_device->drag_offer->offer) >= WL_DATA_OFFER_SET_ACTIONS_SINCE_VERSION) {
+                wl_data_offer_set_actions(data_device->drag_offer->offer, WL_DATA_DEVICE_MANAGER_DND_ACTION_NONE, WL_DATA_DEVICE_MANAGER_DND_ACTION_NONE);
+            }
+        }
         SDL_LogTrace(SDL_LOG_CATEGORY_INPUT,
                      ". In wl_data_device_listener . data_device_handle_enter on data_offer 0x%08x at %d x %d for serial %d",
-                     -1, wl_fixed_to_int(x), wl_fixed_to_int(y), serial);
+                     id ? WAYLAND_wl_proxy_get_id((struct wl_proxy *)id) : -1,
+                     wl_fixed_to_int(x), wl_fixed_to_int(y), serial);
     }
 }
 
@@ -2911,14 +2924,24 @@ static void data_device_handle_motion(void *data, struct wl_data_device *wl_data
     SDL_WaylandDataDevice *data_device = data;
 
     if (data_device->drag_offer && data_device->dnd_window && (data_device->has_mime_file || data_device->has_mime_text)) {
-        const float dx = (float)wl_fixed_to_double(x);
-        const float dy = (float)wl_fixed_to_double(y);
+        SDL_WindowData *window_data = data_device->dnd_window->internal;
+        double dx = wl_fixed_to_double(x);
+        double dy = wl_fixed_to_double(y);
+
+        // If over the mask, adjust the offset.
+        if (data_device->dnd_surface == window_data->mask.surface) {
+            dx += (double)window_data->mask.offset_x;
+            dy += (double)window_data->mask.offset_y;
+        }
+
+        dx *= window_data->pointer_scale.x;
+        dy *= window_data->pointer_scale.y;
 
         /* XXX: Send the filename here if the event system ever starts passing it though.
          *      Any future implementation should cache the filenames, as otherwise this could
          *      hammer the DBus interface hundreds or even thousands of times per second.
          */
-        SDL_SendDropPosition(data_device->dnd_window, dx, dy);
+        SDL_SendDropPosition(data_device->dnd_window, (float)dx, (float)dy);
         SDL_LogTrace(SDL_LOG_CATEGORY_INPUT,
                      ". In wl_data_device_listener . data_device_handle_motion on data_offer 0x%08x at %d x %d in window %d serial %d",
                      WAYLAND_wl_proxy_get_id((struct wl_proxy *)data_device->drag_offer->offer),

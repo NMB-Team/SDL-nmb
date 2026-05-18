@@ -47,10 +47,6 @@ enum
     SDL_GAMEPAD_BUTTON_TRITON_LEFT_PADDLE2,
     SDL_GAMEPAD_BUTTON_TRITON_RIGHT_TOUCHPAD,
     SDL_GAMEPAD_BUTTON_TRITON_LEFT_TOUCHPAD,
-    SDL_GAMEPAD_BUTTON_TRITON_RIGHT_JOYSTICK_TOUCH,
-    SDL_GAMEPAD_BUTTON_TRITON_LEFT_JOYSTICK_TOUCH,
-    SDL_GAMEPAD_BUTTON_TRITON_RIGHT_GRIP_TOUCH,
-    SDL_GAMEPAD_BUTTON_TRITON_LEFT_GRIP_TOUCH,
     SDL_GAMEPAD_NUM_TRITON_BUTTONS,
 };
 
@@ -107,6 +103,13 @@ typedef struct
     Uint16 low_frequency_rumble;
     Uint16 high_frequency_rumble;
     Uint64 last_rumble_time;
+
+    bool left_touch_down;
+    float left_touch_x;
+    float left_touch_y;
+    bool right_touch_down;
+    float right_touch_x;
+    float right_touch_y;
 } SDL_DriverSteamTriton_Context;
 
 static bool IsProteusDongle(Uint16 product_id)
@@ -187,15 +190,15 @@ static void HIDAPI_DriverSteamTriton_HandleState(SDL_HIDAPI_Device *device,
         SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_TRITON_LEFT_TOUCHPAD,
                                ((pTritonReport->buttons & TRITON_LEFT_TOUCHPAD_CLICK) != 0));
 
-        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_TRITON_RIGHT_JOYSTICK_TOUCH,
-                               ((pTritonReport->buttons & TRITON_RIGHT_JOYSTICK_TOUCH) != 0));
-        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_TRITON_LEFT_JOYSTICK_TOUCH,
-                               ((pTritonReport->buttons & TRITON_LEFT_JOYSTICK_TOUCH) != 0));
+        SDL_SendJoystickCapSense(timestamp, joystick, SDL_GAMEPAD_CAPSENSE_RIGHT_STICK,
+                                 ((pTritonReport->buttons & TRITON_RIGHT_JOYSTICK_TOUCH) != 0));
+        SDL_SendJoystickCapSense(timestamp, joystick, SDL_GAMEPAD_CAPSENSE_LEFT_STICK,
+                                 ((pTritonReport->buttons & TRITON_LEFT_JOYSTICK_TOUCH) != 0));
 
-        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_TRITON_RIGHT_GRIP_TOUCH,
-                               ((pTritonReport->buttons & TRITON_RIGHT_GRIP_TOUCH) != 0));
-        SDL_SendJoystickButton(timestamp, joystick, SDL_GAMEPAD_BUTTON_TRITON_LEFT_GRIP_TOUCH,
-                               ((pTritonReport->buttons & TRITON_LEFT_GRIP_TOUCH) != 0));
+        SDL_SendJoystickCapSense(timestamp, joystick, SDL_GAMEPAD_CAPSENSE_RIGHT_GRIP,
+                                 ((pTritonReport->buttons & TRITON_RIGHT_GRIP_TOUCH) != 0));
+        SDL_SendJoystickCapSense(timestamp, joystick, SDL_GAMEPAD_CAPSENSE_LEFT_GRIP,
+                                 ((pTritonReport->buttons & TRITON_LEFT_GRIP_TOUCH) != 0));
 
         if (pTritonReport->buttons & TRITON_LBUTTON_DPAD_UP) {
             hat |= SDL_HAT_UP;
@@ -247,17 +250,33 @@ static void HIDAPI_DriverSteamTriton_HandleState(SDL_HIDAPI_Device *device,
         ctx->last_sensor_tick = pTritonReport->imu.timestamp;
     }
 
-    SDL_SendJoystickTouchpad(timestamp, joystick, 0, 0,
-                             pTritonReport->sPressureLeft > 0,
-                             pTritonReport->sLeftPadX / 65536.0f + 0.5f,
-                             -(float)pTritonReport->sLeftPadY / 65536.0f + 0.5f,
-                             pTritonReport->sPressureLeft / 32768.0f);
+    bool left_touch_down = (pTritonReport->buttons & TRITON_LEFT_TOUCHPAD_TOUCH) ? true : false;
+    bool right_touch_down = (pTritonReport->buttons & TRITON_RIGHT_TOUCHPAD_TOUCH) ? true : false;
+    if (left_touch_down || ctx->left_touch_down) {
+        if (left_touch_down) {
+            ctx->left_touch_x = pTritonReport->sLeftPadX / 65536.0f + 0.5f;
+            ctx->left_touch_y = -(float)pTritonReport->sLeftPadY / 65536.0f + 0.5f;
 
-    SDL_SendJoystickTouchpad(timestamp, joystick, 1, 0,
-                             pTritonReport->sPressureRight > 0,
-                             pTritonReport->sRightPadX / 65536.0f + 0.5f,
-                             -(float)pTritonReport->sRightPadY / 65536.0f + 0.5f,
-                             pTritonReport->sPressureRight / 32768.0f);
+        }
+        SDL_SendJoystickTouchpad(timestamp, joystick, 0, 0,
+                                 left_touch_down,
+                                 ctx->left_touch_x,
+                                 ctx->left_touch_y,
+                                 pTritonReport->sPressureLeft / 32768.0f);
+        ctx->left_touch_down = left_touch_down;
+    }
+    if (right_touch_down || ctx->right_touch_down) {
+        if (right_touch_down) {
+            ctx->right_touch_x = pTritonReport->sRightPadX / 65536.0f + 0.5f;
+            ctx->right_touch_y = -(float)pTritonReport->sRightPadY / 65536.0f + 0.5f;
+        }
+        SDL_SendJoystickTouchpad(timestamp, joystick, 1, 0,
+                                 right_touch_down,
+                                 ctx->right_touch_x,
+                                 ctx->right_touch_y,
+                                 pTritonReport->sPressureRight / 32768.0f);
+        ctx->right_touch_down = right_touch_down;
+    }
 }
 
 static void HIDAPI_DriverSteamTriton_HandleBatteryStatus(SDL_HIDAPI_Device *device,
@@ -479,6 +498,11 @@ static bool HIDAPI_DriverSteamTriton_OpenJoystick(SDL_HIDAPI_Device *device, SDL
 
     SDL_PrivateJoystickAddTouchpad(joystick, 1);
     SDL_PrivateJoystickAddTouchpad(joystick, 1);
+
+    SDL_PrivateJoystickAddCapSense(joystick, SDL_GAMEPAD_CAPSENSE_LEFT_STICK);
+    SDL_PrivateJoystickAddCapSense(joystick, SDL_GAMEPAD_CAPSENSE_RIGHT_STICK);
+    SDL_PrivateJoystickAddCapSense(joystick, SDL_GAMEPAD_CAPSENSE_LEFT_GRIP);
+    SDL_PrivateJoystickAddCapSense(joystick, SDL_GAMEPAD_CAPSENSE_RIGHT_GRIP);
 
     return true;
 }
