@@ -151,6 +151,16 @@ internal class SDL_CurvedContentHosting: NSObject {
         //NSLog("SDL_CurvedContentHosting: Bootstrapping RealityView as hidden child")
     }
 
+    @objc public func dismiss() {
+        guard let hc = self.hostingController else { return }
+
+        settings.dimmingReady = false
+
+        hc.dismiss(animated: false)
+
+        hostingController = nil
+    }
+
     private func updateOrnaments() {
         guard let hostingController else { return }
         let settings = self.settings
@@ -264,6 +274,7 @@ internal class SDL_CurvedContentSettings {
     var inputType: InputType = .eyes
     var showHover: Bool = true
     var isDimmed: Bool = false
+    var dimmingReady: Bool = false
     var curvatureRadius: Float = 0.0
     var sceneState: SceneState = .interactive
     var isSnapped: Bool = false
