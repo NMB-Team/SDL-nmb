@@ -106,18 +106,12 @@
 #cmakedefine HAVE_STRNSTR 1
 #cmakedefine HAVE_STRTOK_R 1
 #cmakedefine HAVE_ITOA 1
-#cmakedefine HAVE__ITOA_S 1
 #cmakedefine HAVE__LTOA 1
-#cmakedefine HAVE__LTOA_S 1
-#cmakedefine HAVE__UITOA 1
 #cmakedefine HAVE__ULTOA 1
-#cmakedefine HAVE__ULTOA_S 1
 #cmakedefine HAVE_STRTOL 1
 #cmakedefine HAVE_STRTOUL 1
 #cmakedefine HAVE__I64TOA 1
-#cmakedefine HAVE__I64TOA_S 1
 #cmakedefine HAVE__UI64TOA 1
-#cmakedefine HAVE__UI64TOA_S 1
 #cmakedefine HAVE_STRTOLL 1
 #cmakedefine HAVE_STRTOULL 1
 #cmakedefine HAVE_STRTOD 1
@@ -467,6 +461,7 @@
 #cmakedefine SDL_VIDEO_RENDER_METAL 1
 #cmakedefine SDL_VIDEO_RENDER_VULKAN 1
 #cmakedefine SDL_VIDEO_RENDER_OGL 1
+#cmakedefine SDL_VIDEO_RENDER_OGL_ES 1
 #cmakedefine SDL_VIDEO_RENDER_OGL_ES2 1
 #cmakedefine SDL_VIDEO_RENDER_NGAGE 1
 #cmakedefine SDL_VIDEO_RENDER_PS2 1
